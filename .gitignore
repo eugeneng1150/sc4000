@@ -1,0 +1,5 @@
+# Ignore the dataset/runtime bundle.
+/predict-ai-model-runtime/
+
+# macOS metadata.
+.DS_Store

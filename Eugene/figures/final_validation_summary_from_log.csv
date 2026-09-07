@@ -1,0 +1,6 @@
+collection,ranking_score,log_runtime_mae,model
+tile:xla,0.969974,0.09007,HGB
+layout:xla:default,0.128923,0.317235,HGB
+layout:xla:random,0.065419,0.171516,MLP
+layout:nlp:default,0.174649,0.036624,HGB
+layout:nlp:random,0.294039,0.079487,HGB

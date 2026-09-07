@@ -1,0 +1,6 @@
+collection,graph_files,families,median_configs,max_configs,median_nodes,max_nodes,median_edges_per_node
+layout:nlp:default,198,4,67832.0,100040,3296.0,21919,1.6328613763582482
+layout:nlp:random,207,4,67000.0,100040,3296.0,21919,1.6314060446780552
+layout:xla:default,61,16,10528.0,100040,10092.0,43615,1.6923076923076923
+layout:xla:random,69,18,8368.0,100040,10449.0,43615,1.6507507831910986
+tile:xla,5709,18,842.0,19991,35.0,394,1.0

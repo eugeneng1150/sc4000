@@ -1,0 +1,16 @@
+collection,split,num_files
+tile:xla,train,5709
+tile:xla,valid,676
+tile:xla,test,844
+layout:xla:default,train,61
+layout:xla:default,valid,7
+layout:xla:default,test,8
+layout:xla:random,train,69
+layout:xla:random,valid,7
+layout:xla:random,test,8
+layout:nlp:default,train,198
+layout:nlp:default,valid,20
+layout:nlp:default,test,17
+layout:nlp:random,train,207
+layout:nlp:random,valid,20
+layout:nlp:random,test,17

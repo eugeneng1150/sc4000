@@ -1,0 +1,196 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\newcommand{\maybeincludegraphics}[2][]{%
+  \IfFileExists{#2}{%
+    \includegraphics[#1]{#2}%
+  }{%
+    \fbox{%
+      \begin{minipage}[c][1.8in][c]{0.9\linewidth}
+        \centering
+        Figure placeholder: \texttt{\detokenize{#2}}\\
+        Regenerate this file by running \texttt{SC4000\_Eugene.ipynb}.
+      \end{minipage}%
+    }%
+  }%
+}
+
+\title{Runtime Prediction for Compiler Optimization Search}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This report summarizes a set of machine learning experiments for predicting graph-centered log runtime across the Tile and Layout collections. The baseline reproduces a paper-style multilayer perceptron (MLP), while the ablations replace or augment it with histogram gradient boosting (HGB) models and increasingly rich graph-derived features, including repeated subgraph counts and Weisfeiler-Lehman fingerprints. Across the small validation setting, HGB models consistently reduced log-runtime mean absolute error (MAE) relative to the MLP baseline and improved ranking quality on most collections. The final selected system uses collection-specific model choices: a combined compact graph HGB model for \texttt{tile:xla} and \texttt{layout:xla:default}, the MLP baseline for \texttt{layout:xla:random}, and the simple summary HGB model for both NLP layout collections. On the final validation runs, the strongest ranking result is obtained on \texttt{tile:xla} with a ranking score of 0.969974 and log-runtime MAE of 0.090070, while layout collections remain more challenging, especially \texttt{layout:xla:random}.
+\end{abstract}
+
+\section{Introduction}
+Compiler optimization requires selecting efficient configurations from a large and irregular search space. In graph-based workloads, each candidate program can differ in operation structure, layout decisions, tiling choices, and hardware-relevant execution properties. Directly evaluating every candidate is expensive, so a predictive model can be used as a surrogate cost model to rank candidate configurations before expensive runtime measurement.
+
+The objective of this experiment is to improve runtime prediction for several collections: \texttt{tile:xla}, \texttt{layout:xla:default}, \texttt{layout:xla:random}, \texttt{layout:nlp:default}, and \texttt{layout:nlp:random}. The target is graph-centered log runtime, which removes graph-level runtime scale and focuses the model on relative differences among configurations for the same graph. This target is appropriate for ranking candidate configurations, since the practical goal is usually to identify faster configurations rather than to estimate absolute wall-clock runtime exactly.
+
+Two evaluation metrics are used. The first is log-runtime MAE, where lower values indicate more accurate runtime prediction. The second is ranking score, where higher values indicate better ordering of candidate configurations. Because compiler autotuning is primarily a ranking problem, ranking score is treated as the main model-selection criterion, with MAE used to diagnose prediction calibration and regression quality.
+
+\section{Exploratory Data Analysis}
+The exploratory data analysis is designed to answer four practical questions before modelling. First, it checks whether the five official collections have comparable train, validation, and test coverage. Second, it examines graph size through node count and edge density. Third, it studies the skew in runtime labels after the \texttt{log1p} transform. Finally, it measures graph-family imbalance, since repeated families such as BERT or ResNet can dominate training if each row is weighted equally.
+
+The local EDA shows that the collections are highly uneven. The \texttt{tile:xla} collection contains 5709 training graph files, compared with only 61 for \texttt{layout:xla:default}, 69 for \texttt{layout:xla:random}, 198 for \texttt{layout:nlp:default}, and 207 for \texttt{layout:nlp:random}. The configuration counts are also very different: \texttt{tile:xla} has a median of 842 configurations per training graph, while the layout collections have median configuration counts from 8368 to 67832 and maximum counts of 100040. This makes full per-configuration training expensive for layout data and motivates explicit configuration sampling.
+
+The graph-size distribution is similarly uneven. The median \texttt{tile:xla} graph has only 35 nodes, while the median layout graph has thousands of nodes: 10092 for \texttt{layout:xla:default}, 10449 for \texttt{layout:xla:random}, and 3296 for both NLP layout collections. The graph-family distribution is also imbalanced. For example, \texttt{tile:xla} is dominated by MLPerf and ResNet graphs, while the NLP layout collections are mostly BERT graphs. These observations explain why the notebook trains separate models per collection and applies graph-family-aware sampling and weighting.
+
+In response to these findings, the notebook includes two corrective sampling steps. The function \texttt{select\_files\_for\_split} performs family-stratified selection when a training-file cap is used, so the model does not simply consume the alphabetically first files. The function \texttt{choose\_config\_indices} performs runtime-stratified configuration sampling for labelled train and validation files: it keeps coverage of the fastest configurations, includes a small slow-runtime tail, and samples the remaining budget across runtime quantiles. This is more appropriate than pure random sampling because the task is ranking-oriented and the fastest configurations are the most important candidates.
+
+\begin{figure}[H]
+\centering
+\maybeincludegraphics[width=0.95\linewidth]{figures/dataset_split_counts.png}
+\caption{Number of graph files in the train, validation, and test splits for each collection. The large scale difference between \texttt{tile:xla} and the layout collections motivates training separate models per collection rather than pooling all data.}
+\label{fig:dataset-split-counts}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\maybeincludegraphics[width=0.95\linewidth]{figures/graph_size_by_collection.png}
+\caption{Training graph size distribution by collection, measured using node count and edges per node. Tile graphs are much smaller than layout graphs, so graph-scale features and graph-centered targets are important.}
+\label{fig:graph-size}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\maybeincludegraphics[width=0.95\linewidth]{figures/runtime_distribution_by_collection.png}
+\caption{Distribution of \texttt{log1p(runtime)} for sampled training configurations. The log transform is used because raw runtimes are highly skewed.}
+\label{fig:runtime-distribution}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\maybeincludegraphics[width=0.95\linewidth]{figures/train_family_counts.png}
+\caption{Most common graph families in the training split. This supports family-stratified file sampling and family-balanced sample weights, especially when a small number of families account for many graph files.}
+\label{fig:family-imbalance}
+\end{figure}
+
+\section{Literature Review}
+Learned cost models are widely used in compiler optimization because traditional analytical models struggle to capture the interactions among graph structure, tensor shapes, memory hierarchy, parallelism, and backend-specific scheduling decisions. Earlier approaches often relied on manually engineered features and classical regression models. These methods are attractive because they are fast to train, interpretable, and robust on small datasets, but their performance depends heavily on the quality of the feature representation.
+
+Neural models, including multilayer perceptrons, are a common baseline for tabular or summarized program features. They can learn nonlinear interactions among features, but they typically require careful normalization, sufficient training data, and stable feature distributions. In the present experiments, the paper-style MLP baseline performs strongly on \texttt{layout:xla:random} during model selection, but is dominated by HGB models on most other collections.
+
+Gradient boosted decision tree models are a strong alternative for structured compiler features. They handle heterogeneous numeric features well, are less sensitive to feature scaling, and can perform competitively with limited data. The HGB models in these experiments substantially reduce log-runtime MAE across all collections compared with the MLP baseline. This suggests that the extracted summary and graph features provide a useful tabular representation for tree-based learning.
+
+Graph-derived features are also important for compiler workloads because runtime depends not only on local operation attributes but also on repeated structural motifs and global graph organization. Repeated subgraph features and Weisfeiler-Lehman fingerprints are compact ways to expose structural information to non-graph-native models. In these experiments, adding graph fingerprints generally improves \texttt{tile:xla} ranking, but gives smaller or mixed gains on layout collections. This indicates that structural features are useful, but the best feature set is collection dependent.
+
+\section{Model Performance}
+The model-selection stage compared five experiment variants: the paper MLP baseline, a simple summary HGB ablation, a repeated-subgraph HGB model, a Weisfeiler-Lehman fingerprint HGB model, and a combined compact graph HGB model. Table~\ref{tab:selection} reports the best selected experiment for each collection based on the validation results.
+
+\begin{table}[h]
+\centering
+\caption{Selected final experiment per collection from model selection.}
+\label{tab:selection}
+\begin{tabular}{ll}
+\toprule
+Collection & Selected final experiment \\
+\midrule
+\texttt{tile:xla} & \texttt{combined\_compact\_graph\_hgb} \\
+\texttt{layout:xla:default} & \texttt{combined\_compact\_graph\_hgb} \\
+\texttt{layout:xla:random} & \texttt{paper\_mlp\_baseline} \\
+\texttt{layout:nlp:default} & \texttt{simple\_summary\_ablation} \\
+\texttt{layout:nlp:random} & \texttt{simple\_summary\_ablation} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+During model selection, the HGB variants improved over the MLP baseline on most collections. On \texttt{tile:xla}, the combined compact graph HGB model achieved a ranking-score gain of 0.080866 over the MLP baseline and reduced log-runtime MAE by 0.115263. On \texttt{layout:xla:default}, the same model improved ranking score by 0.117137 and reduced MAE by 0.156699. For \texttt{layout:nlp:default} and \texttt{layout:nlp:random}, the simple summary HGB model produced the best ranking scores among the tested variants, with large MAE reductions relative to the MLP baseline.
+
+The main exception is \texttt{layout:xla:random}. In that collection, the MLP baseline retained the best model-selection ranking score. All tested HGB variants had higher MAE and lower ranking scores than the MLP. This suggests that the random layout setting may require either a different feature representation or a model better suited to capturing layout-specific ordering effects.
+
+\begin{figure}[H]
+\centering
+\maybeincludegraphics[width=0.95\linewidth]{figures/experiment_ranking_scores.png}
+\caption{Validation ranking score by experiment and collection. Higher values indicate better ordering of candidate configurations.}
+\label{fig:experiment-ranking}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\maybeincludegraphics[width=0.95\linewidth]{figures/experiment_log_runtime_mae.png}
+\caption{Validation log-runtime MAE by experiment and collection. Lower values indicate better regression accuracy on the centered log-runtime target.}
+\label{fig:experiment-mae}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{Final per-collection validation performance after retraining selected models.}
+\label{tab:final-performance}
+\begin{tabular}{lcccl}
+\toprule
+Collection & Ranking score & Log-runtime MAE & Train rows & Model \\
+\midrule
+\texttt{tile:xla} & 0.969974 & 0.090070 & 24861 & HGB \\
+\texttt{layout:xla:default} & 0.128923 & 0.317235 & 10240 & HGB \\
+\texttt{layout:xla:random} & 0.065419 & 0.171516 & 8852 & MLP \\
+\texttt{layout:nlp:default} & 0.174649 & 0.036624 & 15360 & HGB \\
+\texttt{layout:nlp:random} & 0.294039 & 0.079487 & 15360 & HGB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The final retraining results in Table~\ref{tab:final-performance} show a clear difference between tile and layout tasks. The \texttt{tile:xla} model achieves very strong ranking performance, suggesting that the combined compact graph feature set captures the runtime-relevant variation in tiling configurations. In contrast, the layout collections have lower ranking scores, even when MAE is small. This gap implies that accurate point prediction does not always translate into high-quality ordering among candidate layouts.
+
+The NLP layout collections show low MAE, especially \texttt{layout:nlp:default}, but only moderate ranking quality. Since these collections contain only the BERT family, the model may be learning graph-specific runtime scale well while still struggling to distinguish close configurations within each graph. The XLA layout collections contain more graph families, and their final performance is weaker after retraining than during the smaller model-selection run, especially for \texttt{layout:xla:default}. This may indicate distribution shift between the small validation setup and the larger final training/evaluation split.
+
+\section{Training Diagnostics}
+The final validation metrics are summarized visually in Figure~\ref{fig:final-validation}. This view makes the difference between tile and layout collections clearer than the table alone: \texttt{tile:xla} has a high ranking score, while the layout tasks remain much harder to order correctly.
+
+\begin{figure}[H]
+\centering
+\maybeincludegraphics[width=0.95\linewidth]{figures/final_validation_metrics.png}
+\caption{Final validation ranking score and log-runtime MAE after retraining the selected model for each collection.}
+\label{fig:final-validation}
+\end{figure}
+
+Prediction diagnostics are also useful because a model can achieve low MAE while still ranking nearby configurations incorrectly. Figure~\ref{fig:prediction-diagnostics} compares true centered log runtime against predicted centered log runtime for sampled validation configurations. Points close to the diagonal indicate calibrated predictions; wide scatter or slope mismatch indicates systematic prediction error.
+
+\begin{figure}[H]
+\centering
+\maybeincludegraphics[width=0.95\linewidth]{figures/prediction_diagnostics.png}
+\caption{Predicted versus true centered log runtime on sampled validation configurations. This plot diagnoses calibration and outlier behavior beyond aggregate MAE.}
+\label{fig:prediction-diagnostics}
+\end{figure}
+
+The remaining figures that require rerunning the notebook after model training are the prediction diagnostic plot, the MLP training diagnostic, and the HGB staged validation curve. The final model with a neural training-loss curve is the MLP model selected for \texttt{layout:xla:random}. Figure~\ref{fig:mlp-loss} reports the available MLP training loss together with the validation score from early stopping, where available. Training loss alone is not sufficient to diagnose overfitting; overfitting is suggested when training loss continues to fall while validation performance stalls or worsens.
+
+\begin{figure}[H]
+\centering
+\maybeincludegraphics[width=0.85\linewidth]{figures/mlp_training_loss.png}
+\caption{Training loss and validation-score diagnostics for final MLP models, where available. In the current final selection, this primarily applies to \texttt{layout:xla:random}.}
+\label{fig:mlp-loss}
+\end{figure}
+
+For HGB models, the notebook exports staged validation MAE instead of a neural-style loss curve. Figure~\ref{fig:hgb-validation-curve} evaluates the trained boosted model after successive boosting iterations. If the validation MAE is still decreasing at the final iteration, increasing \texttt{max\_iter} may help. If the curve reaches a minimum and then rises, the model is likely overfitting and should use fewer boosting iterations or stronger regularization.
+
+\begin{figure}[H]
+\centering
+\maybeincludegraphics[width=0.85\linewidth]{figures/hgb_validation_mae_curve.png}
+\caption{Staged validation MAE for final HGB models. The marked best iteration indicates where additional boosting stopped improving validation error.}
+\label{fig:hgb-validation-curve}
+\end{figure}
+
+\section{Next Steps}
+The first next step is to diagnose the mismatch between MAE and ranking score. For each collection, predictions should be analyzed per graph by plotting predicted versus true centered log runtime and by measuring top-$k$ regret. This will show whether low ranking scores come from a few difficult graphs, many near-tied configurations, or systematic ordering errors.
+
+Second, the feature pipeline should be extended for layout-specific information. The current graph features improve tile prediction but are less effective for layout ranking. Features that directly encode layout choices, tensor shape transformations, memory access patterns, and operation-level placement may help the model distinguish candidates with similar graph structure but different layout behavior.
+
+Third, model selection should include ranking-aware objectives. The current models optimize regression loss, while the downstream metric is ranking quality. Pairwise or listwise ranking losses, LambdaMART-style boosted ranking models, or graph-level candidate normalization could align training more closely with the evaluation objective.
+
+Fourth, the validation protocol should be made more robust. The small model-selection setting used two validation files, while final retraining used five validation files and substantially more training data. Repeating the experiment across multiple random splits or using graph-family-aware cross-validation would make the selected model choices more reliable.
+
+Finally, the final system should include an ensemble or fallback strategy. Since no single model dominates all collections, a collection-aware ensemble that combines MLP predictions, HGB summary features, and graph fingerprint features may improve robustness. For \texttt{layout:xla:random}, in particular, the MLP should remain a strong baseline while additional layout-specific and ranking-aware models are tested.
+
+\end{document}
