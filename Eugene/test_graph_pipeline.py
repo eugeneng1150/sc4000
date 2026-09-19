@@ -17,11 +17,14 @@ import torch
 
 def load_definitions(notebook):
     cells = json.loads(notebook.read_text())["cells"]
-    ns = {}
+    ns = {"display": lambda value: None}
     for i in (4, 8, 10, 12, 14, 16):
         tree = ast.parse("".join(cells[i]["source"]))
         if i in (10, 16):
-            tree.body = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))]
+            tree.body = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+                         or (i == 16 and isinstance(node, ast.Assign)
+                             and any(isinstance(t, ast.Name) and t.id in
+                                     {'BASELINE_FEATURE_SOURCE', 'BASELINE_FEATURES'} for t in node.targets))]
         exec(compile(tree, str(notebook), "exec"), ns)
     return ns
 
@@ -111,7 +114,63 @@ def main():
             assert trained.cache.graph_preparations == 2
             assert trained.cache.extractions == 1  # train was already extracted above
             assert (Path(tmp) / "gnn_runs/synthetic/history.csv").exists()
+            # Family selection is deterministic and covers the smaller families.
+            files = [Path(f"bert_{i}.npz") for i in range(10)] + [Path("resnet_1.npz"), Path("inception_1.npz")]
+            ns["split_files"] = lambda collection, split: sorted(files)
+            selected = ns["select_files_for_split"]("synthetic", "train", 6)
+            assert len(selected) == len(set(selected)) == 6
+            assert selected == ns["select_files_for_split"]("synthetic", "train", 6)
+            assert {ns["infer_model_family"](p.stem) for p in selected} == {"bert", "resnet", "inception"}
+            assert len(ns["select_files_for_split"]("synthetic", "train", 24)) == 12
+
+            # Explicit validation IDs preserve non-sorted order through both predictors.
+            manifest = ns["make_validation_manifest"](trained, [valid])
+            manifest[0]["config_indices"] = [700, 0, 17, 201]
+            ns["FIXED_VALIDATION"]["synthetic"] = manifest
+            indices = ns["validation_indices"]("synthetic", valid, len(config), 81)
+            np.testing.assert_array_equal(indices, [700, 0, 17, 201])
+            got, _ = trained.predict_file(valid, config_indices=indices)
+            np.testing.assert_array_equal(got, indices)
+            ns["BASELINE_FEATURE_BATCH_SIZE"] = 3
+            # Chunked features match the original whole-selection feature functions.
+            import pandas as pd
+            for profile in ns["REFERENCE_FEATURE_PROFILES"]:
+                settings = ns["BASELINE_FEATURES"]["FEATURE_EXPERIMENTS"][profile]
+                actual = ns["baseline_frame"](data, "layout:xla:random", indices, settings)
+                expected = ns["BASELINE_FEATURES"]["config_features_from_file"](data, "layout:xla:random", indices, settings)
+                graph_features = ns["BASELINE_FEATURES"]["graph_level_features"](data, settings)
+                expected = pd.concat([expected, pd.DataFrame([graph_features] * len(indices))], axis=1)
+                pd.testing.assert_frame_equal(actual, expected)
+            ns["BASELINE_FEATURE_BATCH_SIZE"] = 64
+            comparison = ns["compare_models"](trained, "synthetic", [train], [valid])
+            assert set(comparison["model"]) == {"gnn", "reference_hgb_simple_summary_ablation", "reference_hgb_wl_fingerprint"}
+            assert np.isfinite(comparison["ranking_score"]).all()
+            aligned = pd.read_csv(Path(tmp) / "gnn_runs/synthetic/comparison_predictions.csv")
+            np.testing.assert_array_equal(aligned.config_index.to_numpy(), indices)
+            # Saved-artifact loading and rank averaging preserve both members.
+            members = ns["train_boosting_references"](trained, "synthetic", [train])
+            flattened = [member for group in members.values() for member in group]
+            import joblib
+            artifact = Path(tmp) / "saved.joblib"
+            joblib.dump({"synthetic": flattened}, artifact)
+            ns["GNN_COLLECTIONS"] = ["synthetic"]
+            ns["BASELINE_ARTIFACT_PATH"] = artifact
+            saved = ns["saved_baseline_members"]()
+            predictions = ns["predict_baseline_members"](data, "synthetic", indices, flattened)
+            individual = [ns["predict_baseline_members"](data, "synthetic", indices, [member]) for member in flattened]
+            expected = np.mean([pd.Series(values).rank(method="average").to_numpy() for values in individual], axis=0)
+            np.testing.assert_array_equal(predictions, expected)
+            comparison = ns["compare_models"](trained, "synthetic", [train], [valid], saved)
+            assert set(comparison["model"]) == {"gnn", "saved_main_ensemble"}
+            # Missing requested artifacts must fail, not silently retrain references.
+            ns["BASELINE_ARTIFACT_PATH"] = Path(tmp) / "missing.joblib"
+            try:
+                ns["saved_baseline_members"]()
+                raise AssertionError("Missing explicit baseline artifact was ignored")
+            except FileNotFoundError:
+                pass
             print("PASS: cache parity, gradient parity, reuse, bounded LRU, label-independent sampling, training, best-checkpoint restoration and prediction")
+            print("PASS: family coverage, fixed validation IDs, feature parity, reference comparison and saved ensemble comparison")
         finally:
             os.chdir(original_dir)
 

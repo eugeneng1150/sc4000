@@ -19,7 +19,7 @@ baseline; this change does not claim improved Kaggle performance.
   of the loading changes with the old training setup.
 - Log startup, graph lookup, batch construction, model step, training and
   validation times. Save the best validation weights and restore them after
-  training; stop after three validation checks without improvement.
+  training; stop after five validation checks without improvement.
 - Sample validation configurations uniformly without consulting labels. This
   diagnostic is deliberately different from the previous runtime-stratified
   sample. Prediction ties contribute zero to sampled concordance. Rerun the
@@ -37,16 +37,41 @@ skip the Colab download cell. Python, PyTorch, NumPy, pandas, scikit-learn and
 tqdm are required. The notebook installs missing small dependencies, but PyTorch
 must already be installed.
 
-Keep the initial three epochs. Inspect `gnn_runs/<collection>/history.csv` and
+The current experiment uses up to 24 family-stratified training graphs, 64
+configurations per graph, 20 epochs, validation every epoch, and patience of five
+validation checks. Inspect `gnn_runs/<collection>/history.csv` and
 `best.pt` under the working directory. These filenames are replaced on another
 run for that collection: copy a run's outputs or change `GNN_OUTPUT_DIR` before
 running another experiment. Disk cache keys include source path, size and mtime.
 Delete `.gnn_cache` if you replace source contents without changing those fields.
 
-After inspecting timings, compare batches 4/8/16 and threads 1/2/4. Then increase
-to 10 or 20 epochs if validation is still improving. The initial 8-graph,
-64-configuration training subset is unchanged; longer training alone does not
-increase data coverage. Configurable nodes are always retained, so graphs with
+The experiment prints available and selected graph counts per filename-inferred
+family. The five validation files and seeded uniform configuration samples match
+the previous runs. `validation_manifest.json` records exact IDs and source identity;
+`training_manifest.json` and `training_coverage.csv` record training coverage.
+Selection uses training filenames only. The limit is capped by available files.
+
+The last cell evaluates saved main ensemble members if
+`models/ensemble_members_by_collection.joblib` exists, or if
+`BASELINE_ARTIFACT_PATH` points to that trusted file. Those fitted artifacts are
+not in the repository. With no saved artifact, the notebook trains two labelled
+HGB reference models (simple summary and WL fingerprint) using this repository's
+original feature functions and HGB settings, on the same training files and
+configuration IDs as the GNN. These references do not reproduce the top-17%
+submission. An explicitly requested missing/incompatible artifact fails visibly.
+Saved rank ensembles are averaged within the common validation sample; full-set
+rank averaging can differ. Final decisions need full-configuration evaluation.
+
+`comparison_summary.csv` reports GNN and baseline/reference scores;
+`comparison_by_graph.csv` shows family-specific performance;
+`comparison_predictions.csv` saves aligned predictions and configuration IDs.
+Send the combined `gnn_runs/comparison_summary.csv`, the two `history.csv` files,
+and both `training_coverage.csv` files after running. Five validation graphs and
+checkpoint selection on those same graphs make this a preliminary comparison.
+No submission is modified automatically. The other three collections remain in
+the main notebook.
+
+Configurable nodes are always retained, so graphs with
 more than 512 such nodes exceed the neighbourhood target. Lower batch size if
 needed for RAM. The cache is local to the runtime and may need rebuilding after
 a Colab session ends.
@@ -57,7 +82,9 @@ Run `python Eugene/test_graph_pipeline.py` from the repository root. It exercise
 the notebook definitions directly using a synthetic compressed graph. It checks
 exact equality of old/cached input tensors, predictions and gradients; cache
 reuse and zero-capacity eviction; label-independent validation sampling; finite
-two-epoch CPU training; saved best-checkpoint restoration; and prediction.
+two-epoch CPU training; saved best-checkpoint restoration; prediction; deterministic
+family coverage; exact feature values under batching; fixed validation IDs;
+reference-model comparisons; and loaded ensemble-member comparisons.
 
 In the development environment, 32 batches of synthetic input construction took
 0.242 seconds through repeated compressed reads and 0.001 seconds through the
