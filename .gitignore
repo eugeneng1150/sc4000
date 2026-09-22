@@ -2,5 +2,12 @@
 /predict-ai-model-runtime/
 /data
 
+# Local GNN data cache, checkpoints and timing logs (root or notebook cwd).
+**/.gnn_cache/
+**/gnn_runs/
+**/full_run/
+**/full_run_backup.zip
+**/__pycache__/
+
 # macOS metadata.
 .DS_Store
