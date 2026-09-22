@@ -6,7 +6,13 @@ The project goal is to rank compiler configurations for each computation graph f
 
 ## Main Files
 
-The main notebook is:
+The recommended end-to-end notebook is:
+
+```text
+Eugene/SC4000_Full_Hybrid.ipynb
+```
+
+The baseline-focused reference notebook is:
 
 ```text
 Eugene/SC4000_Eugene.ipynb
@@ -16,11 +22,14 @@ Supporting files:
 
 ```text
 Eugene/experiment_report.tex
+Eugene/FULL_HYBRID.md
+Eugene/CPU_GNN.md
+Eugene/gnn_architecture.tex
 Eugene/figures/
 Eugene/Papers/
 ```
 
-Older notebooks such as `SC4000.ipynb` and `demo.ipynb` are retained for reference, but they are not the main workflow.
+The obsolete `SC4000.ipynb`, `demo.ipynb`, and `graph.ipynb` notebooks have been removed.
 
 ## Repository Layout
 
@@ -29,6 +38,7 @@ The current expected layout is:
 ```text
 sc4000/
   Eugene/
+    SC4000_Full_Hybrid.ipynb
     SC4000_Eugene.ipynb
     experiment_report.tex
     figures/
@@ -102,7 +112,7 @@ This separation matters because the collections have different feature layouts, 
 
 ## What The Notebook Does
 
-`SC4000_Eugene.ipynb` currently implements:
+`SC4000_Full_Hybrid.ipynb` currently implements:
 
 1. Dataset discovery and structural checks.
 2. EDA over file counts, graph sizes, runtime distributions, and graph-family imbalance.
@@ -114,7 +124,9 @@ This separation matters because the collections have different feature layouts, 
 8. Per-collection model comparison.
 9. Final per-collection model selection.
 10. Model diagnostics, including MLP loss/validation curves and HGB staged validation MAE.
-11. Submission generation.
+11. A CPU GraphSAGE experiment for `layout:xla:default` and `layout:xla:random`.
+12. Bounded sampled-configuration and graph-preprocessing caches.
+13. Streaming test inference and baseline/hybrid submission generation.
 
 ## Model Summary
 
@@ -126,7 +138,7 @@ The notebook compares:
 - `wl_fingerprint_hgb`: HGB with Weisfeiler-Lehman-style graph fingerprints.
 - `combined_compact_graph_hgb`: HGB with the combined compact graph feature set.
 
-The final workflow selects the best validation experiment separately for each collection, so the final system contains one model per collection rather than one shared model for all data.
+The baseline selects the best validation experiments separately for each collection. The hybrid candidate then replaces the two XLA layout rankings with GraphSAGE predictions while leaving the other three collections unchanged.
 
 ## Figures And Report
 
@@ -155,7 +167,7 @@ If running in Colab, upload or mount the dataset so that this path exists:
 Then run:
 
 ```text
-Eugene/SC4000_Eugene.ipynb
+Eugene/SC4000_Full_Hybrid.ipynb
 ```
 
 The notebook should find the data automatically if the folder structure matches one of the expected locations.

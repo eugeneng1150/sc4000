@@ -4,6 +4,16 @@ This repository contains project work for Kaggle's **Google - Fast or Slow? Pred
 
 The competition is about building a learned cost model for compiler optimization. Given a machine learning computation graph and many possible compiler configurations, the goal is to rank the configurations from fastest predicted runtime to slowest predicted runtime.
 
+## Recommended Notebook
+
+The primary end-to-end workflow is:
+
+```text
+Eugene/SC4000_Full_Hybrid.ipynb
+```
+
+It trains the five-collection CPU baseline, adds GraphSAGE models for the two XLA layout collections, compares them on fixed validation samples, and exports baseline and hybrid submissions. `Eugene/SC4000_Eugene.ipynb` remains available as the baseline-focused reference notebook.
+
 ## Competition Goal
 
 Machine learning models can be represented as computation graphs:
@@ -124,6 +134,7 @@ Recommended structure:
 ```text
 sc4000/
   Eugene/
+    SC4000_Full_Hybrid.ipynb
     SC4000_Eugene.ipynb
     README.md
     experiment_report.tex
