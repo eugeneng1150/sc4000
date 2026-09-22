@@ -6,6 +6,7 @@
 **/.gnn_cache/
 **/gnn_runs/
 **/full_run/
+**/full_run_backup/
 **/full_run_backup.zip
 **/__pycache__/
 
