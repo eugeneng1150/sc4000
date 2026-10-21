@@ -30,7 +30,7 @@ baseline; this change does not claim improved Kaggle performance.
 
 ## Run
 
-Open `Eugene/graph.ipynb` from the `dev` branch in Colab, choose a CPU runtime,
+Historical instructions: `Eugene/graph.ipynb` on the former `dev` branch used a CPU runtime,
 and run the cells. The notebook is self-contained; it needs the competition data
 and the existing Colab Kaggle secrets for the download cell. With local data,
 skip the Colab download cell. Python, PyTorch, NumPy, pandas, scikit-learn and
@@ -78,7 +78,8 @@ a Colab session ends.
 
 ## Verification
 
-Run `python Eugene/test_graph_pipeline.py` from the repository root. It exercises
+The former `test_graph_pipeline.py` checked the removed `graph.ipynb` notebook.
+That orphaned test was retired during repository cleanup. It exercised
 the notebook definitions directly using a synthetic compressed graph. It checks
 exact equality of old/cached input tensors, predictions and gradients; cache
 reuse and zero-capacity eviction; label-independent validation sampling; finite

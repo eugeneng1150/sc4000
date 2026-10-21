@@ -1,0 +1,6 @@
+collection,graphs,median_nodes,max_nodes
+layout:nlp:default,198,3296.0,21919
+layout:nlp:random,207,3296.0,21919
+layout:xla:default,61,10092.0,43615
+layout:xla:random,69,10449.0,43615
+tile:xla,5709,35.0,394

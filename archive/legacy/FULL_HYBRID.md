@@ -44,7 +44,7 @@ browser download permissions block multiple downloads, download them from the
 Colab file sidebar. Download the backup before ending the runtime. Existing
 `full_run/` outputs are overwritten if the notebook is rerun there.
 
-Verification: `python Eugene/test_full_hybrid.py` exercises all five baseline fits,
+Verification: `python archive/legacy/test_full_hybrid.py` exercises all five baseline fits,
 both GNN fits, saving/loading artifacts, common-sample comparison and submission
 export on tiny synthetic data with reduced iteration counts. It checks that the
 other three collections are unchanged and rejects duplicate indices. It does not

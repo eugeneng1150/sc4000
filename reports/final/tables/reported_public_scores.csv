@@ -1,0 +1,6 @@
+label,score,precision,source
+Basic baseline,0.4,approximate,user-reported
+Tabular system,0.53,approximate,user-reported
+Initial hybrid,0.55,approximate,user-reported
+Data/training extension,0.558,reported to three decimals,user-reported
+Final selected system,0.567,reported to three decimals,user-reported

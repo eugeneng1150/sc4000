@@ -1,13 +1,31 @@
-# Ignore the dataset/runtime bundle.
+# Datasets, downloaded checkpoints, local notebook snapshots and scratch work.
+/data/
+/local/
 /predict-ai-model-runtime/
-/data
+/results/
+/output/
+/tmp/
+/sc4000_*results*.zip
 
-# Local GNN data cache, checkpoints and timing logs (root or notebook cwd).
+# Outputs from running the self-contained notebooks in any working directory.
+**/sc4000_final_frozen/
+**/sc4000_gnn_v*/
+**/sc4000_gnn_ablation*/
+**/.sc4000_*/
 **/.gnn_cache/
 **/gnn_runs/
 **/full_run/
 **/full_run_backup.zip
-**/__pycache__/
+**/.matplotlib/
+**/.ipynb_checkpoints/
 
-# macOS metadata.
+# Python, editor and LaTeX build products.
+**/__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.aux
+*.log
+*.out
+*.toc
 .DS_Store
