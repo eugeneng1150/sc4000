@@ -1,0 +1,5 @@
+collection,dev_gain,experiment,reference,baseline_score,candidate_score,mean_paired_gain,score_points,relative_gain_pct,graphs,graph_win_fraction,bootstrap_low,bootstrap_high,uncertainty_note
+layout:nlp:default,0.0664767587078044,v5_selected,v4_selected,0.4112626644240983,0.4535790462743553,0.042316381850257,4.231638185025701,10.289380853356509,20,0.75,0.0221740342098168,0.0634368016096864,exploratory graph bootstrap; no multiplicity correction
+layout:nlp:random,0.0050159743248535,v5_selected,v4_selected,0.6724929819176707,0.6842800458436413,0.0117870639259706,1.178706392597064,1.7527415516454654,20,0.9,0.0067991679237396,0.0180006780798649,exploratory graph bootstrap; no multiplicity correction
+layout:xla:default,0.0292713690742841,v5_selected,v4_selected,0.0351745947529224,0.0943478466326194,0.059173251879697,5.9173251879697,168.22724553146622,7,1.0,0.0312753618593065,0.0927244367079133,exploratory graph bootstrap; no multiplicity correction
+layout:xla:random,0.0,v5_selected,v4_selected,0.2711559113423696,0.2711559113423696,0.0,0.0,0.0,7,0.0,0.0,0.0,exploratory graph bootstrap; no multiplicity correction
