@@ -53,7 +53,7 @@ def reference(root,ref):
     cfg=plan.default_config()
     cfg.update(collections=[c],gnn_collections=[],folds=[0,1],seeds=[42,137,2026],
         dev_graphs=2,holdout_graphs=2,layout_train_graphs=4,layout_more_graphs=4,
-        train_pool_configs=16,fit_configs=12,eval_configs=16,cpu_threads=1,
+        train_pool_configs=16,fit_configs=12,eval_configs=16,cpu_threads=1,hgb_iterations=6,
         bootstrap_repeats=20,system_reserve_gib=.01,disk_reserve_gib=.01)
     for split,count in [('train',9),('valid',2),('test',1)]:
         for i in range(count):
@@ -71,7 +71,8 @@ def reference(root,ref):
     cfg['sample_submission']=str(template)
     ref3=ref/'reference_v3';d=ref3/key;d.mkdir(parents=True)
     exp=dict(next(e for e in engine.experiments() if e['name']=='P_full'),
-             name='T_deeper_hgb',configs=12,iterations=6,min_leaf=2,train_graphs=0)
+             name='T_full_small',configs=12,min_leaf=2,train_graphs=0)
+    exp.pop('iterations',None)  # Real XLA default reference inherits cfg['hgb_iterations'].
     engine.write_json(d/'experiment_plan.json',[exp])
     for fold in cfg['folds']:
         m=plan.manifest(root,c,cfg,fold)
@@ -220,11 +221,33 @@ class V5Tests(unittest.TestCase):
             results={str(p.relative_to(output)):sha(p) for p in output.glob('*/folds/*/trials/*/*/result.json')}
             restored=t/'restored'
             restore(archive,restored)
+            identity=read(restored/'run_identity.json')
+            identity['sources'].update(core.ESTIMATOR_FIX_PREVIOUS_SOURCES)
+            identity['signature']=engine.digest({k:identity[k] for k in
+                ['config','versions','sources','reference_digest']})
+            engine.write_json(restored/'run_identity.json',identity)
             controller.run(root,restored,t/'scratch2',RUNTIME,cfg,enforce_versions=False)
             self.assertEqual(results,{str(p.relative_to(restored)):sha(p) for p in restored.glob('*/folds/*/trials/*/*/result.json')})
+            self.assertTrue((restored/'estimator_fix_migration.json').exists())
             # Old absolute paths recorded in job logs are not reused on restore.
             self.assertEqual((output/'submission_selected.csv').read_bytes(),(restored/'submission_selected.csv').read_bytes())
             self.assertTrue((restored/'report/01_target_and_learner_screening.png').exists())
+
+    def test_estimator_upgrade_rejects_scientific_changes(self):
+        from copy import deepcopy
+        value=dict(config={'hgb_iterations':180},versions={'numpy':'fixed'},
+                   reference_digest='reference',sources=dict(core.ESTIMATOR_FIX_PREVIOUS_SOURCES,
+                   **{'v5_worker.py':'unchanged-worker'}))
+        previous=dict(value,version=core.VERSION,signature=engine.digest(value))
+        current=deepcopy(value)
+        current['sources'].update({'v5_core.py':'new-core','v5_controller.py':'new-controller'})
+        self.assertTrue(core.estimator_fix_compatible(previous,current))
+        for key,changed in [('config',{'hgb_iterations':300}),('versions',{'numpy':'other'}),
+                            ('reference_digest','different-reference'),
+                            ('sources',dict(current['sources'],**{'v5_worker.py':'different-worker'}))]:
+            with self.subTest(key=key):
+                self.assertFalse(core.estimator_fix_compatible(previous,dict(current,**{key:changed})))
+        self.assertFalse(core.estimator_fix_compatible(dict(previous,signature='invalid'),current))
 
     def test_notebook_syntax_and_embedded_sources(self):
         import nbformat

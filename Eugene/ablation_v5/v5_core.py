@@ -173,6 +173,31 @@ def finalists(screening, admitted):
     return list(dict.fromkeys(chosen))
 
 
+# Exact pre-fix sources: this migration changes only the admission estimate and
+# identity bookkeeping. Training, features, selection, config and dependencies
+# must remain identical; arbitrary source changes still invalidate the study.
+ESTIMATOR_FIX_PREVIOUS_SOURCES = {
+    'v5_controller.py': 'faf485f26de29627b5459cfa3cc2445928cc48da925c5018fe96c4a26e07c09c',
+    'v5_core.py': '5ebbf66476824331fa6e17c16e90054201983d10e27dbdf4eef4677be2d82f28',
+}
+
+
+def estimator_fix_compatible(previous, current):
+    if previous.get('version') != VERSION:
+        return False
+    old = {k:previous.get(k) for k in current}
+    if previous.get('signature') != digest(old):
+        return False
+    if any(old['sources'].get(n) != h for n,h in ESTIMATOR_FIX_PREVIOUS_SOURCES.items()):
+        return False
+    sources = dict(old['sources'])
+    for name in ESTIMATOR_FIX_PREVIOUS_SOURCES:
+        if name not in current['sources']:
+            return False
+        sources[name] = current['sources'][name]
+    return dict(old, sources=sources) == current
+
+
 def archive_identity(output, runtime, cfg, enforce_versions=True):
     output, runtime = Path(output), Path(runtime)
     ref = output/'reference_v4'
@@ -197,7 +222,13 @@ def archive_identity(output, runtime, cfg, enforce_versions=True):
     signature = digest(value)
     p = output/'run_identity.json'
     if p.exists() and read(p)['signature'] != signature:
-        raise ValueError('V5 code, reference, versions or scientific settings changed; do not mix runs')
+        previous = read(p)
+        if not estimator_fix_compatible(previous, value):
+            raise ValueError('V5 code, reference, versions or scientific settings changed; do not mix runs')
+        write_json(output/'estimator_fix_migration.json', dict(
+            reason='HGB pilot estimate now uses the same inherited tree count as training',
+            previous_identity=previous, updated_signature=signature))
+        print('CHECKPOINT UPGRADE: HGB estimator fix; completed fits and scientific settings preserved.',flush=True)
     write_json(p, dict(version=VERSION, signature=signature, **value))
     for p in runtime.glob('*.py'):
         shutil.copy2(p, output/p.name)

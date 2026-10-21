@@ -76,3 +76,13 @@ are preserved. ZIPs use atomic replacement; browser delivery must be checked.
 Build: `python3 Eugene/ablation_v5/build_notebook.py`.
 Test with an environment containing XGBoost 3.0.5 and the scientific dependencies:
 `python Eugene/ablation_v5/test_v5.py`.
+
+### Resuming after `KeyError: 'iterations'` (2026-10-21)
+
+Use the updated notebook. The repair affects pilot resource estimation only; it
+preserves training settings and completed fits. Original v5 checkpoints are
+recognized through exact source hashes and upgraded with an audit record.
+Download the last completed checkpoint before resetting a runtime, restore it into
+an empty results directory in the updated notebook, then run all cells in order.
+For an intact results directory use `RESTORE_ZIP = ""` and rerun setup before training.
+Expected message: `CHECKPOINT UPGRADE: HGB estimator fix; completed fits and scientific settings preserved.`

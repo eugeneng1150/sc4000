@@ -54,3 +54,22 @@ prevention. Full-row Colab pilots determine admission and estimates. Actual
 parallel speedup depends on CPU allocation and contention.
 The test suite uses tabular reference fixtures; saved-GNN forward inference is
 delegated to the unchanged v4 worker, whose GNN path was validated in v4.
+
+## 2026-10-21: inherited HGB tree-count repair
+
+The original synthetic reference explicitly set `iterations`, so it missed the
+production `T_full_small` reference, which inherits `hgb_iterations` from config.
+With an inherited-count reference, the end-to-end regression reproduced the exact
+`KeyError: 'iterations'` after successful pilots. The estimator now resolves the
+same tree count as the frozen training engine; model training is unchanged.
+
+Checkpoint migration accepts only the exact original controller/core hashes and
+unchanged scientific config, dependency versions, reference digest and all other
+runtime source hashes. It records the previous identity in
+`estimator_fix_migration.json`. Regression coverage checks rejection of unrelated
+changes and resumes a restored checkpoint without changing completed result hashes
+or submission bytes. The original synthetic fixture now uses inherited tree counts.
+
+Validation: all 8 synthetic tests passed in 34.330 seconds, including the original
+failure case, exact-source upgrade checks, export and restored resume. Real Colab
+competition training was not rerun locally.

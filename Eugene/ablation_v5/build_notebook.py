@@ -29,6 +29,10 @@ percentile-target HGB, XGBoost regression, and grouped XGBoost pairwise ranking.
 It reuses the existing features, training examples, development folds and trained GNNs.
 Tile is carried forward unchanged. There is **no GNN training**.
 
+**2026-10-21 repair:** the HGB pilot estimator handles inherited tree counts.
+Original v5 checkpoints are upgraded automatically only when scientific settings,
+reference, dependencies and all other runtime sources match. Completed fits are reused.
+
 Run all on standard Colab CPU. No repository checkout or Drive mount is needed.
 On the first run upload the completed **v4 ZIP**. Later, a **v5 ZIP** is sufficient:
 it embeds the v4 and v3 references. Only use your own trusted model archives.

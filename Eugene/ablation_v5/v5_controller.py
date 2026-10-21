@@ -122,13 +122,15 @@ def run(root, output, scratch, runtime, cfg, on_checkpoint=None, enforce_version
             return result
         # Two measured checkpoints expose some histogram/tree-memory growth.
         low,high=pilots[0],pilots[-1]
-        remaining=max(0,exp['iterations']-high['iterations'])
+        # Match study_engine.fit_model's inherited HGB tree count.
+        iterations=exp.get('iterations',settings['hgb_iterations'])
+        remaining=max(0,iterations-high['iterations'])
         per_tree=max(0.,(high['peak_rss_gib']-low['peak_rss_gib'])/
                      max(1,high['iterations']-low['iterations']))
         model_growth=max(p['model_bytes']/p['iterations']/GIB for p in pilots)
         forecast=max(p['peak_rss_gib'] for p in pilots)+remaining*max(per_tree,model_growth)
         reservation=forecast*cfg['pilot_memory_multiplier']+cfg['pilot_memory_add_gib']
-        seconds=max(p['fit_seconds']/p['iterations'] for p in pilots)*exp['iterations']
+        seconds=max(p['fit_seconds']/p['iterations'] for p in pilots)*iterations
         result=dict(admitted=reservation<=cfg['worker_ram_gib'],estimate_gib=reservation,
             measured_peak_gib=max(p['peak_rss_gib'] for p in pilots),fit_minutes=seconds/60,
             reason='Measured full-row pilots plus growth/headroom; not a hard peak guarantee',
