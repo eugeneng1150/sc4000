@@ -6,17 +6,14 @@ The project goal is to rank compiler configurations for each computation graph f
 
 ## Main Files
 
-The recommended end-to-end notebook is:
+Use [`SC4000_Final.ipynb`](SC4000_Final.ipynb) for the frozen **0.567** selected
+submission, coherent methodology and report figures. Run all to replay the saved
+evidence and export the exact CSV; it does not retrain or need a dataset upload.
+Keep the complete checkpoint separately for the trained models.
 
-```text
-Eugene/SC4000_Full_Hybrid.ipynb
-```
-
-The baseline-focused reference notebook is:
-
-```text
-Eugene/SC4000_Eugene.ipynb
-```
+See [`final_study/README.md`](final_study/README.md) for integrity checks, outputs
+and source provenance. The remaining notebook descriptions below document the
+historical exploration workflows, not the frozen final recipe.
 
 Supporting files:
 

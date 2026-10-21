@@ -6,13 +6,15 @@ The competition is about building a learned cost model for compiler optimization
 
 ## Recommended Notebook
 
-The primary end-to-end workflow is:
+The final frozen submission and report workflow is
+[`Eugene/SC4000_Final.ipynb`](Eugene/SC4000_Final.ipynb).
+It recreates figures/tables and exports the exact selected submission associated
+with the user-reported public score **0.567**, without training or dataset downloads.
+The compact evidence is embedded; the complete saved-model checkpoint is retained
+separately. See [`Eugene/final_study/README.md`](Eugene/final_study/README.md).
 
-```text
-Eugene/SC4000_Full_Hybrid.ipynb
-```
-
-It trains the five-collection CPU baseline, adds GraphSAGE models for the two XLA layout collections, compares them on fixed validation samples, and exports baseline and hybrid submissions. `Eugene/SC4000_Eugene.ipynb` remains available as the baseline-focused reference notebook.
+The other notebooks are historical exploration workflows. They are not required
+for the final notebook's default run. Its output is prediction replay, not fresh inference.
 
 ## Competition Goal
 
