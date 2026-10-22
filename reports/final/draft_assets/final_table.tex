@@ -1,0 +1,16 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Collection & $n$ & Basic & Final & $\Delta$ \\
+\midrule
+NLP default & 20 & 0.2563 & 0.4536 & +0.1972 \\
+NLP random & 20 & 0.3795 & 0.6843 & +0.3047 \\
+XLA default & 7 & 0.0109 & 0.0943 & +0.0834 \\
+XLA random & 7 & 0.1287 & 0.2712 & +0.1425 \\
+Tile & 24 & 0.9505 & 0.9793 & +0.0288 \\
+\bottomrule
+\end{tabular}
+\caption{Whole-system comparison on reused audit graphs. Layout rows report mean Kendall tau; Tile reports one minus top-five regret. These different metrics must not be averaged into a Kaggle score. Gains are absolute.}
+\label{tab:final}
+\end{table}

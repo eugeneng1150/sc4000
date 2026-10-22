@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+XLA & Model & Fold 0 & Fold 1 & Mean \\
+\midrule
+default & Basic HGB & 0.1324 & 0.1281 & 0.1302 \\
+ & Matched HGB & 0.1218 & 0.1437 & 0.1328 \\
+ & GraphSAGE & 0.0191 & 0.0594 & 0.0393 \\
+random & Basic HGB & 0.3087 & 0.1455 & 0.2271 \\
+ & Matched HGB & 0.3306 & 0.2703 & 0.3005 \\
+ & GraphSAGE & 0.4084 & 0.3482 & 0.3783 \\
+\bottomrule
+\end{tabular}
+\caption{Model-family screening at seed 42 on common development folds. Matched HGB shares GraphSAGE training examples/budgets; basic HGB uses its separate baseline budget. All values are Kendall tau.}
+\label{tab:family}
+\end{table}

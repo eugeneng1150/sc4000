@@ -1,0 +1,16 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Collection & HGB log & HGB pct & GNN \\
+\midrule
+NLP default & 25\% & 75\% & -- \\
+NLP random & 50\% & 50\% & -- \\
+XLA default & 37.5\% & 25\% & 37.5\% \\
+XLA random & 25\% & -- & 75\% \\
+Tile & 100\% & -- & -- \\
+\bottomrule
+\end{tabular}
+\caption{Final rank-blend weights. Each component averages recorded seeds and both folds for test inference. NLP random uses expanded-data HGB; GNN node budgets are 2,048 for XLA default and 512 for XLA random. No XGBoost model is selected.}
+\label{tab:recipe}
+\end{table}

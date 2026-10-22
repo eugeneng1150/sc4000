@@ -1,0 +1,15 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Collection & H-log & H-pct & X-reg & X-pair \\
+\midrule
+NLP def. & 0.3874 & 0.4396 & 0.3683 & 0.4146 \\
+NLP rand. & 0.7242 & 0.7217 & 0.6718 & 0.6968 \\
+XLA def. & 0.1288 & 0.1520 & 0.0577 & 0.1356 \\
+XLA rand. & 0.3091 & 0.3002 & 0.3280 & 0.2940 \\
+\bottomrule
+\end{tabular}
+\caption{Mean development tau over two folds at seed 42. H-log/H-pct compare HGB targets; X-reg/X-pair compare XGBoost objectives. Training examples match within each collection. These standalone screen results differ from confirmed ensemble gains.}
+\label{tab:targets}
+\end{table}

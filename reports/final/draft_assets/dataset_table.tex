@@ -1,0 +1,16 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Collection & Graphs & Median $|V|$ & Max $|V|$ \\
+\midrule
+NLP default & 198 & 3,296 & 21,919 \\
+NLP random & 207 & 3,296 & 21,919 \\
+XLA default & 61 & 10,092 & 43,615 \\
+XLA random & 69 & 10,449 & 43,615 \\
+Tile & 5709 & 35 & 394 \\
+\bottomrule
+\end{tabular}
+\caption{Graph counts in the official training data. Counts describe the supplied collection, not every model's training subset. Graph identities may overlap across collections.}
+\label{tab:data}
+\end{table}

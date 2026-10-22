@@ -1,21 +1,15 @@
-# Figure captions
+# Historical experiment figure captions
 
-**01_pipeline.** Training workflow that produced the frozen system. This notebook replays its evidence; it does not rerun this training pipeline.
+**01_method.** Raw-data reproduction workflow. Compatible saved models are loaded; missing models are trained before evaluation and prediction. Blend recipes remain fixed.
 
-**02_data_and_coverage.** Left: supplied training graph inventory; boxplot outliers hidden. Right: uniform-sampled audit graph coverage; edge denominator is the pre-capped context, not necessarily the original complete graph. Node/configurable-node/edge caps co-vary.
+**02_model_families.** Historical seed-42 exploration, common development folds. Matched-data HGB and GraphSAGE share graph/configuration budgets; architecture/features differ. Basic HGB is a separate pipeline baseline. Fold disagreement is visible; this is not proof of universal GNN superiority.
 
-**03_component_ablations.** Confirmed component comparisons against their specified controls. Exploratory graph-bootstrap intervals, not multiplicity-corrected. All intervals shown cross zero; do not claim independently established gains for masks or context. Not a cumulative waterfall.
+**03_components.** Historical three-seed confirmed comparisons. Each row has its own named control in the source table. Bootstrap intervals cross zero: these comparisons do not establish clear standalone gains. They are not additive steps in a waterfall.
 
-**04_graph_budget.** Seed-42 screening averaged over two development folds. Larger sampled graphs did not consistently improve scores. Other graph caps co-vary; missing settings are not zero.
+**04_coverage_and_data.** Historical seed-42 screening, averaged over two development folds. Top: node/configurable-node/edge caps change together. Bottom: graph/configuration counts also change optimizer work. Larger budgets did not consistently improve ranking; this is not a compute-matched scaling experiment.
 
-**05_training_data.** Seed-42 data-budget screening, two-fold mean at the selected graph budget. “All eligible” excludes each fold’s development graphs. More examples also increase optimiser steps, so this is not compute-matched.
+**05_target_and_objective.** Historical matched-example screening. HGB log-runtime versus percentile changes target; XGB regression versus pairwise changes objective. HGB versus XGB also changes learner/capacity. Final blend improvements require the separate three-seed confirmation evidence.
 
-**06_target_and_objective.** Matched example IDs per fold/seed. HGB control versus percentile isolates target transformation; XGB regression versus pairwise isolates objective within its fixed learner settings. HGB versus XGB changes learner/capacity. Seed-42 screening only; no XGB model was selected.
+**06_final_results.** Historical baseline-to-final comparison on reused official-validation audit graphs. Layout and Tile have different metrics. This is a whole-system comparison, not an isolated ablation; do not average the panels or interpret them as a Kaggle score.
 
-**07_final_audit.** Previously inspected official-validation audit: 20 graphs per NLP collection, 7 per XLA layout, 24 Tile. Baseline and selected are saved ensembles. Metrics differ between panels; do not average them into a Kaggle estimate. Reuse makes this exploratory evidence, not a new untouched test.
-
-**08_public_scores.** User-reported public scores; first three are approximate. Final 0.567 versus 0.558: +0.009 absolute (+1.61% relative). Verify exact scores and current rank with a screenshot before report submission. No inferred leaderboard percentile.
-
-**09_gnn_learning_curves.** Actual selected GNN histories; dots mark saved selected epochs. Left: mean training batch loss (pairwise objective with regression fallback on batches lacking eligible pairs). Right: ranking score on the smaller early-stopping development subset, not validation loss or the full selection metric. Individual fold/seed curves are unsmoothed; no claim of absence of overfitting.
-
-**10_training_resources.** Measured workers in the target/objective study. Parallel job times are not total elapsed time; extraction, inference and backups are additional. Worker RSS excludes the rest of the Colab session.
+**S1_learning_curves.** Historical selected GNNs. Training loss and early-development tau use different units. Dots mark selected epochs. No per-epoch validation loss was saved, and these curves do not prove absence of overfitting.

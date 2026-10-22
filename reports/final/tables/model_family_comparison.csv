@@ -1,0 +1,13 @@
+collection,model,experiment,fold,score
+layout:xla:default,Basic HGB,B0_basic_hgb,0,0.1323855566688341
+layout:xla:default,Basic HGB,B0_basic_hgb,1,0.12811406921080906
+layout:xla:default,Matched-data HGB,H_matched_gall_c256,0,0.12180826423962332
+layout:xla:default,Matched-data HGB,H_matched_gall_c256,1,0.14371539182177892
+layout:xla:default,GraphSAGE,G_data_gall_c256,0,0.019118895739076255
+layout:xla:default,GraphSAGE,G_data_gall_c256,1,0.05941223612296812
+layout:xla:random,Basic HGB,B0_basic_hgb,0,0.3087491637441216
+layout:xla:random,Basic HGB,B0_basic_hgb,1,0.14548131418765994
+layout:xla:random,Matched-data HGB,H_matched_gall_c128,0,0.3306466277490308
+layout:xla:random,Matched-data HGB,H_matched_gall_c128,1,0.27032691981710344
+layout:xla:random,GraphSAGE,G_data_gall_c128,0,0.4083822684770184
+layout:xla:random,GraphSAGE,G_data_gall_c128,1,0.3481929797596708
