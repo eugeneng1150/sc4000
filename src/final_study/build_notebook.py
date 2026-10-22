@@ -1,9 +1,10 @@
-"""Build the standalone final presentation notebook from the immutable evidence pack."""
+"""Build the standalone raw-data reproduction and experimental narrative notebook."""
 import base64
 import hashlib
 import json
 from pathlib import Path
 HERE=Path(__file__).resolve().parent
+REPO=HERE.parents[1]
 cells=[]
 def cell(kind,text,**metadata):
     text=text.strip()+'\n'
@@ -12,343 +13,473 @@ def cell(kind,text,**metadata):
     cells.append(c)
 def md(s):cell('markdown',s)
 def code(s,**kwargs):cell('code',s,**kwargs)
-md('''# SC4000 — Learning to rank compiler configurations
-## Frozen final system and experimental evidence
 
-**Final public Kaggle score: 0.567 (user-reported). Frozen on 21 October 2026.**
+def runtime_sources():
+    result={}
+    for name in ['engine','gnn','common','plan','submission']:
+        result['study_'+name+'.py']=(REPO/'src/ablation_v3'/f'{name}.py').read_text()
+    for name in ['v4_core','v4_worker']:
+        result[name+'.py']=(REPO/'src/ablation_v4'/f'{name}.py').read_text()
+    for name in ['v5_worker','v5_scheduler']:
+        result[name+'.py']=(REPO/'src/ablation_v5'/f'{name}.py').read_text()
+    for name in ['final_worker','reproduce','final_report','story']:
+        result[name+'.py']=(HERE/f'{name}.py').read_text()
+    return result
 
-We rank compiler configurations using collection-specific histogram gradient boosting
-models and sampled graph neural networks, combining their predictions through rank
-ensembles. A within-graph percentile target provides a useful complementary HGB model.
+md('''# SC4000 — Ranking compiler configurations under limited resources
+## From a boosted-tree baseline to a collection-specific graph–tabular ensemble
 
-This is the consolidated final notebook. The exploratory notebooks contain the search
-history; this notebook explains the final method and recreates its evidence in one place.
-Its default run **does not train, tune, download the dataset, or perform fresh model
-inference**. It loads an embedded, hash-checked evidence pack, generates report figures,
-and exports the exact previously evaluated submission. The full checkpoint remains the
-saved-model archive; its selected model files can be verified optionally below.
+**Research question:** how can we improve configuration rankings while staying within a
+standard Colab CPU session's approximately 12–13 GB RAM?
 
-**Outputs:** `submission_final.csv`, ten PNG/PDF figures, supporting CSV tables,
-figure captions, and a report artifact ZIP. The submission hash must be
-`dc037f378ddb9d0892c283a26a7f31170ac6cc01e937e4d14f2847296ff80312`.
+Our investigation starts with a basic boosted-tree baseline, explores compact features
+and graph learning, tests representation/data/objective changes, and combines models
+where their predictions complement one another. The final selected submission achieved
+**0.567 on the public leaderboard (user-reported)**. That score describes the historical
+submission, not an unsubmitted rerun.
 
-No other notebook or uploaded ZIP is needed for the default evidence replay.
-Keep the complete model checkpoint separately: the compact embedded pack is not a model backup.
+**This notebook is executable from raw competition data without a model ZIP.** It contains
+all source code, fixed recipes, graph splits, configuration sampling IDs and seeds.
+Compatible models are loaded; missing models are trained. Predictions are generated from
+those models, not copied from the historical CSV. A model archive is an optional shortcut.
+
+Default execution reproduces **60 selected fits + 30 basic-baseline fits**, across two
+folds and three seeds. It does not search for a different final model. The optional ablation
+switch reruns recorded experiments without changing the selected recipe. A fresh CPU run
+can require multiple sessions: inspect the job count, retain backups and resume completed fits.
+
+**Reading guide:** each investigation follows *question → experiment → observation → decision*.
+Historical figures are explicitly labelled. Current-run evaluation appears separately at
+section 7. Saved presentation outputs do not claim that a new full training run has completed.
 ''')
-md('''## 1. Run settings and frozen evidence
+md('''## 0. Execution settings and reproducibility
 
-Run from top to bottom on Colab CPU or locally with NumPy, pandas and Matplotlib.
-No package upgrades are performed. Those plotting packages are separate from the exact
-scientific versions recorded for the trained model archive.
+Use `RUN_MODE = "reproduce"` for the normal load-or-train workflow. `"review"` only
+regenerates the historical narrative and figures; it deliberately produces no new submission.
 
-`MODEL_ARCHIVE` is optional: leave it empty to skip checking the full saved-model archive.
-Set it to your complete downloaded ZIP or extracted results folder to verify all selected
-models without loading pickle files. `DOWNLOAD_OUTPUTS` controls only the final browser
-request; verify that the file actually reaches your computer.
+Set `DATA_ROOT` to extracted competition data, or enable the existing Kaggle download helper
+with your own credentials and competition access. Dataset access is required for training
+and fresh inference even when models are available. No private paths or uploaded model ZIP
+are required. Model training uses the recorded bounded subsets, not silently all supplied data.
+
+A complete **historical v5** archive can be supplied as `MODEL_ARCHIVE`. New final-run backups
+instead go in `RESTORE_RUN_ZIP`; restore once into an empty output directory, then clear it
+when resuming in the same runtime. Existing incompatible runs require a different `RUN_NAME`.
 ''')
 code('''from pathlib import Path
-import os, sys, json, base64, hashlib, io, zipfile, types
+import os, sys, json, base64, hashlib, io, zipfile, shutil, subprocess, importlib.metadata
+RUN_MODE = "reproduce"  # "review" renders historical evidence only
+RUN_ABLATIONS = False
+ABLATION_SEEDS = [42]  # [42, 137, 2026] reruns all recorded confirmations too
+DATA_ROOT = ""
+SAMPLE_SUBMISSION = ""
+DOWNLOAD_IF_MISSING = False
+MODEL_ARCHIVE = ""  # optional complete historical v5 ZIP or extracted folder
+RESTORE_RUN_ZIP = ""  # optional new final-reproduction backup, restored ONCE
+RUN_NAME = "sc4000_final_reproduction"
+AUTO_DOWNLOAD_CHECKPOINTS = True
+SESSION_HOURS = 8.0
+CHECKPOINT_MINUTES = 30
+WORKER_RAM_GIB = 5.0
+SYSTEM_RESERVE_GIB = 2.0
+CPU_THREADS = 2
 BASE_DIR = Path("/content") if Path("/content").exists() else Path.cwd()
-OUTPUT_DIR = BASE_DIR / "sc4000_final_frozen"
-MODEL_ARCHIVE = ""  # optional complete saved-model ZIP or extracted results folder
-DOWNLOAD_OUTPUTS = False
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["MPLCONFIGDIR"] = str(OUTPUT_DIR / ".matplotlib")
-from IPython.display import display, Image, Markdown
+OUTPUT_DIR = BASE_DIR / RUN_NAME
+SCRATCH_DIR = BASE_DIR / ("." + RUN_NAME + "_scratch")
+RUNTIME_DIR = BASE_DIR / ("." + RUN_NAME + "_runtime")
+STORY_DIR = BASE_DIR / (RUN_NAME + "_historical_report")
+RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+os.environ["MPLCONFIGDIR"] = str(RUNTIME_DIR / "matplotlib")
+for key in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"]:
+    os.environ[key] = str(CPU_THREADS)
+if RUN_MODE not in {"reproduce", "review"}: raise ValueError("Choose reproduce or review")
 ''')
-payload=(HERE.parents[1]/'artifacts/final/frozen_evidence.zip').read_bytes();digest=hashlib.sha256(payload).hexdigest()
-module=(HERE/'final_report.py').read_text()
-code(f'''# Self-contained audited report code and compact frozen evidence; no training calls.
-REPORT_SOURCE = {module!r}
+payload=(REPO/'artifacts/final/frozen_evidence.zip').read_bytes()
+spec=(REPO/'artifacts/final/reproduction_spec.zip').read_bytes()
+code(f'''# Embedded source and small experiment specification. Neither archive contains weights or raw data.
+SOURCES = {runtime_sources()!r}
 EVIDENCE_B64 = {base64.b64encode(payload).decode()!r}
-EVIDENCE_SHA256 = {digest!r}
-final_report = types.ModuleType("sc4000_final_report")
-exec(compile(REPORT_SOURCE, "embedded_final_report.py", "exec"), final_report.__dict__)
-EVIDENCE_DIR = OUTPUT_DIR / "evidence"
-freeze = final_report.unpack(base64.b64decode(EVIDENCE_B64), EVIDENCE_SHA256, EVIDENCE_DIR)
-print("Frozen submission:", freeze["submission_sha256"])
-print("Rows:", freeze["submission_rows"], "| selected model files:", freeze["selected_model_files"])
-print("Public score:", freeze["public_score_user_reported"], "(user-reported)")
+EVIDENCE_SHA256 = {hashlib.sha256(payload).hexdigest()!r}
+SPEC_B64 = {base64.b64encode(spec).decode()!r}
+SPEC_SHA256 = {hashlib.sha256(spec).hexdigest()!r}
+SPEC_BYTES = base64.b64decode(SPEC_B64)
+if hashlib.sha256(SPEC_BYTES).hexdigest() != SPEC_SHA256: raise ValueError("Specification checksum failed")
+with zipfile.ZipFile(io.BytesIO(SPEC_BYTES)) as z:
+    CONTRACT = json.loads(z.read("contract.json"))
+for name, source in SOURCES.items():
+    (RUNTIME_DIR / name).write_text(source)
+sys.path.insert(0, str(RUNTIME_DIR))
+print("Embedded implementation and exact experimental specification ready.")
 ''',jupyter={'source_hidden':True})
-code('''import pandas as pd
-import numpy as np
-FIGURES = final_report.generate(EVIDENCE_DIR, OUTPUT_DIR)
-def table(name):
-    return pd.read_csv(OUTPUT_DIR / "tables" / (name + ".csv"))
-def evidence_table(name):
-    return pd.read_csv(EVIDENCE_DIR / "tables" / (name + ".csv"))
-def show_figure(name):
-    display(Image(filename=str(FIGURES / (name + ".png"))))
-print("Report figures and source tables regenerated from saved evidence.")
+md('''### Dependencies
+
+Reproduction uses the recorded scientific versions. If packages already imported in this
+session are upgraded, restart the session and Run all again; keep the data and results.
+Installing pinned dependencies can take several minutes. Review mode uses the available
+plotting environment and does not load trained model objects.
 ''')
-md('''## 2. Task, data and evaluation
-
-The input is a computation graph and candidate compiler configurations. The output is
-an ordering of configuration IDs, with faster predicted candidates first. There are five
-collections: NLP default/random layout, XLA default/random layout, and XLA tiling. These
-are dataset groups, not model families. Each has its own selected predictor or blend.
-
-The saved training inventory below describes all supplied training graphs. Actual model
-fits use bounded subsets, documented later. Layout graphs can be large, and the number
-of configurations makes fully materializing their arrays expensive.
-
-For local **layout** evaluation we use Kendall's tau between runtimes and predicted
-costs: higher is better. For **Tile** we use one minus top-five regret on sampled
-candidates, where regret is `fastest_runtime_among_predicted_top5 / best_runtime - 1`.
-Local candidate subsets and graph counts differ from full Kaggle evaluation; the metrics
-must not be averaged or treated as interchangeable with the public score.
-
-The final CSV follows each sample-submission row's required output length. A layout row
-need not contain every possible candidate when the template requests fewer. Short Tile
-rows retain the established template-padding convention.
-''')
-code('''display(table("dataset_summary"))
-show_figure("02_data_and_coverage")
-''')
-md('''## 3. Preprocessing and representation
-
-**Graph-level splitting.** Two fixed development folds reserve disjoint development graph
-blocks. Within each fold, its development graphs are excluded from training. A graph may
-be used for training in the other fold; that other model is not used to score its development
-fold. Official validation graphs form an audit set that has already been inspected during
-exploration. We do not describe it as a new untouched test set.
-
-**Configuration sampling and memory bounds.** Fixed label-independent candidate pools
-and recorded training-ID manifests make comparisons repeatable. Selected configuration
-rows are streamed from NPZ members in bounded chunks; full layout tensors are not loaded
-at once. Graph/configuration caps, matrix guards, isolated workers and scratch cleanup
-keep the training workflow within the intended 12–13 GB Colab CPU environment. Limits
-can exclude an experiment; exclusion does not mean that model performed badly.
-
-**Layout features.** The `-1` sentinel is distinguished from valid axis categories. We
-compute masked statistics and validity fractions, per-position categorical histograms,
-hashed opcode/layout and depth/layout summaries, edge-category co-occurrences, and compact
-graph topology features. Axis IDs in categorical histograms are categories, not physical
-sizes. The HGB feature blocks used by each selected model are recorded in the recipe JSON.
-
-**Tile features.** The 24 numeric configuration inputs use raw summaries, signed-log
-transforms and selected pair interactions alongside graph summaries. Layout padding
-semantics are not imposed on Tile inputs.
-
-**Targets and weights.** Original HGB models predict `log(1 + runtime)` centered by the
-training graph's median. The alternative target is `(rank(runtime) - 1)/(m - 1)` within
-the selected training configurations of each graph (with denominator at least one).
-Ties use average ranks. Graph weighting prevents configuration-rich graphs from dominating
-simply through their row counts. Validation runtimes are never used to construct training
-labels or label-independent features.
-''')
-code('''show_figure("01_pipeline")
-display(evidence_table("reference_split_inventory").query("split != 'train'"))
-''')
-md('''## 4. Models and the frozen final recipe
-
-**Baseline:** basic-summary histogram gradient boosting (`B0_basic_hgb`). A richer
-feature HGB provides the stronger tabular comparison. Differences in training size and
-capacity are documented; the complete pipeline comparison is not a single-component ablation.
-
-**Sampled GNN:** a 16-dimensional opcode embedding, standardized numeric node features,
-configuration values and optional validity masks feed a width-32 network with two directed
-mean-neighbour message-passing layers and residual updates. Mean/max pooling over all
-retained nodes and configurable nodes is combined with optional context summaries. A
-pairwise hinge objective encourages lower predicted cost for faster configurations;
-batches without eligible runtime differences fall back to smooth-L1 regression.
-
-The selected XLA default GNN uses a 2,048-node cap and 256 training configurations per
-graph; the selected XLA random GNN uses 512 nodes and 128 configurations. Both use all
-eligible training graphs for their fold. These caps do not imply complete graph retention.
-
-**Final ensemble:** each saved fold/seed predictor scores candidates; scores are converted
-to within-graph normalized ranks before averaging and blending. The weights below are
-fixed by development selection. They are not weights learned from Kaggle test labels.
-No XGBoost model was retained in the final system.
-
-The table keeps original experiment IDs so every entry can be traced to a saved model.
-A training graph cap of zero means all eligible graphs, not zero examples. The actual
-counts in the second table are the authoritative record of what each model saw.
-''')
-code('''display(table("final_model_recipe"))
-sizes = table("actual_training_sizes")
-display(sizes.groupby(["collection", "experiment", "fold"], as_index=False).agg(
-    training_graphs=("graphs", "first"), configurations=("configurations", "first"),
-    min_configs=("min_configs", "min"), max_configs=("max_configs", "max")))
-''')
-md('''## 5. What the ablations establish
-
-### Components and graph structure
-
-We tested validity masks, context summaries, message passing, graph budgets and training
-budgets. These are distinct comparisons, not cumulative improvements that can be added.
-The component plot uses graph-paired comparisons and exploratory bootstrap intervals.
-**All displayed mask/context/message-passing intervals cross zero.** Therefore this
-experiment does not establish a clear standalone benefit for those components. A final
-model can contain a component without its individual gain having been proven.
-
-Increasing the sampled graph budget did not consistently improve development scores.
-Changing training graph/configuration counts sometimes helped, but the effect varied by
-collection and fold. More training examples also change the number of optimizer steps;
-we do not claim a compute-matched scaling law. Coverage limits are a plausible constraint,
-not a demonstrated cause of poorer GNN performance.
-''')
-code('''show_figure("03_component_ablations")
-show_figure("04_graph_budget")
-show_figure("05_training_data")
-''')
-md('''### Training-data expansion and target/objective comparisons
-
-Expanding tabular training data helped NLP random in the earlier development selection;
-the existing NLP default and Tile predictors were retained. Larger Tile settings met
-resource exclusions, so they cannot be called negative performance results. Longer GNN
-training did not pass the fold-consistency selection rule.
-
-The final controlled study kept graph/configuration IDs matched to the selected tabular
-reference and compared: (1) percentile-target HGB; (2) XGBoost regression; and (3) grouped
-XGBoost pairwise ranking. HGB control versus percentile changes the target. XGBoost
-regression versus pairwise changes the objective within fixed XGBoost settings. Comparing
-HGB directly with XGBoost also changes learner/capacity.
-
-Screening used seed 42 on two folds. Promising models received seeds 137 and 2026. A
-small predefined blend grid was eligible only if its mean development gain was at least
-0.002 and neither fold regressed. This is a practical selection rule, not a significance
-test. Some deterministic tree predictions are identical across seeds; repeated seeds
-are not independent graph replications.
-
-**Result:** percentile HGB complements the incumbent on NLP default, NLP random and XLA
-default. In NLP random, the percentile model alone is slightly worse on mean development
-score, but its blend improves. No new candidate was selected for XLA random. Tile was
-carried forward. The study finished with 36 new fits; 56 was only the initial upper bound.
-''')
-code('''show_figure("06_target_and_objective")
-display(table("target_blend_audit")[["collection", "dev_gain", "baseline_score",
-    "candidate_score", "mean_paired_gain", "graphs", "bootstrap_low", "bootstrap_high"]])
-''')
-md('''## 6. Final results and interpretation
-
-The table and audit chart compare the frozen system with the basic HGB baseline. The
-stronger tabular comparison is also retained in the underlying `final_system_sources`
-table. In particular, the XLA random hybrid does not outperform the earlier tabular
-ensemble on every audit comparison; selection was made on development data, not by
-reselecting whichever model later looked best on the audit set.
-
-All three accepted final updates improve both development folds and their reused audit
-scores. Audit gains versus the preceding selected system are **+0.0423** (NLP default),
-**+0.0118** (NLP random), and **+0.0592** (XLA default). XLA audit sets contain only seven
-graphs; NLP sets contain twenty. Bootstrap intervals are exploratory, not corrected for
-multiple comparisons, and the audit has been inspected before.
-
-The user-reported public score increased from **0.558 to 0.567**, an absolute gain of
-**0.009**, approximately **1.61% relative**. Three collections changed together, so we
-cannot attribute that exact public gain to a single collection. Earlier baseline/tabular/
-hybrid scores in the chart are approximate conversation reports, not independently verified
-measurements. Add the Kaggle screenshot and exact ranking position before submitting the
-report. We do not infer a top-10% ranking from the score.
-''')
-code('''display(table("baseline_and_final_audit"))
-show_figure("07_final_audit")
-show_figure("08_public_scores")
-''')
-md('''## 7. Training behaviour and resource constraints
-
-These curves come from the **GNN checkpoints actually used in the final ensemble**,
-not the rejected longer-training candidates. Each line is one fold/seed; dots mark saved
-selected epochs. The left panel is training loss; the right panel is development ranking
-score on the smaller early-stopping subset. They have different units and should not be
-plotted as two comparable losses.
-
-A falling training loss with declining development tau can indicate overfitting. A
-plateau indicates little additional validation benefit. Early stopping limits training
-past the best observed checkpoint, but the curves do **not** prove absence of overfitting.
-There is no recorded per-epoch validation-loss series to reconstruct honestly, and these
-GNN curves do not diagnose the entire HGB/GNN ensemble.
-
-In the saved curves, XLA random training loss generally decreases while development
-scores fluctuate and often peak before the last epoch. XLA default is less stable,
-with several low or near-zero development trajectories. These observations support
-checkpoint selection and explicit uncertainty, not a claim of uniformly successful
-GNN training or no overfitting.
-
-The resource chart shows measured worker peaks and wall times for the target/objective
-study. Parallel jobs were admitted only after pilots and memory/CPU checks, with sequential
-fallback. Summed worker time is not total elapsed time. Streamed preparation and repeated
-feature extraction can remain expensive even when worker RAM use is small.
-''')
-code('''show_figure("09_gnn_learning_curves")
-display(table("gnn_learning_diagnostics"))
-show_figure("10_training_resources")
-''')
-md('''## 8. Freeze, provenance and submission export
-
-The compact evidence pack includes measured results, selected recipes, underlying source
-code for inspection, and hashes for all **60 selected saved model files**. It does not
-contain the model weights. Keep the complete checkpoint ZIP as the model archive.
-
-The following cell optionally verifies that archive by streaming each selected file's
-hash. It does not load model objects. Reproducing fresh predictions from raw NPZs remains
-a separate saved-model inference task using the archived code and exact dependency
-versions; exporting the saved submission below is explicitly **prediction replay**, not
-fresh inference or retraining.
-''')
-code('''if MODEL_ARCHIVE:
-    print(final_report.verify_model_archive(MODEL_ARCHIVE, EVIDENCE_DIR))
+code('''if RUN_MODE == "reproduce":
+    wanted = dict(CONTRACT["versions"])
+    if not RUN_ABLATIONS: wanted.pop("xgboost", None)
+    changed = []
+    for package, version in wanted.items():
+        try: installed = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError: installed = None
+        if installed != version: changed.append(package)
+    ordinary = [f"{p}=={wanted[p]}" for p in changed if p != "torch"]
+    if ordinary:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "--no-cache-dir", *ordinary])
+    if "torch" in changed:
+        args = [sys.executable, "-m", "pip", "install", "--quiet", "--no-cache-dir"]
+        if sys.platform == "linux": args += ["--index-url", "https://download.pytorch.org/whl/cpu"]
+        subprocess.check_call(args + ["torch==" + wanted["torch"]])
+    modules = {"scikit-learn": "sklearn"}
+    if any(modules.get(p,p) in sys.modules for p in changed):
+        raise RuntimeError("Dependencies updated. Restart session, then Run all; keep files/settings.")
+    print("Scientific versions:", wanted)
 else:
-    print("Full model archive check skipped; compact evidence integrity was verified.")
-print("Original trained-model dependency versions:")
-display(final_report.read(EVIDENCE_DIR / "run_identity.json")["versions"])
-SUBMISSION = final_report.export_submission(EVIDENCE_DIR, OUTPUT_DIR)
-print("Verified submission:", SUBMISSION)
-print(final_report.validate_submission(EVIDENCE_DIR))
+    print("REVIEW ONLY: historical figures; no models loaded, trained or submitted.")
+import numpy as np
+import pandas as pd
+from IPython.display import display, Image, Markdown
+import final_report, story
+EVIDENCE_DIR = STORY_DIR / "evidence"
+freeze = final_report.unpack(base64.b64decode(EVIDENCE_B64), EVIDENCE_SHA256, EVIDENCE_DIR)
+FIGURES = story.generate(EVIDENCE_DIR, STORY_DIR, CONTRACT)
+def table(name): return pd.read_csv(STORY_DIR / "tables" / (name + ".csv"))
+def show(name): display(Image(filename=str(FIGURES / (name + ".png"))))
+print("Historical figures regenerated. These are recorded experiment results, not new-run metrics.")
 ''')
-md('''## 9. Report and presentation handoff
+md('''## 1. Problem and evaluation: what does a good prediction mean?
 
-Organize the report around **one solution**, not notebook version numbers:
+A computation graph is a program; each candidate configuration chooses compiler settings
+for that same program. We predict a **ranking**, with faster configurations first. The
+five collections—NLP default/random layout, XLA default/random layout and XLA tiling—are
+dataset groups, not model families.
 
-1. Task, challenges, group contributions and reported leaderboard result.
-2. Preprocessing, feature design, bounded GNN and collection-specific rank blends.
-3. Baselines and controlled ablations; explain both positive and inconclusive results.
-4. Final audit/public results, computational constraints and limitations.
-5. Conclusions and references.
+**Layout:** local evaluation uses Kendall tau-b between measured runtime and predicted
+cost, averaged over graphs; higher is better. **Tile:** local evaluation uses one minus
+top-five regret: `1 - (best runtime among predicted top five / best runtime - 1)`.
+These sampled local metrics are not the aggregate Kaggle score and must not be averaged together.
 
-The supplied course brief requires the AAAI format, **at most ten pages including
-references**, a presentation of at most ten minutes, and the prediction CSV or notebook
-with saved models to check the reported result. A new full training sweep is not required
-by that brief. Keep source code and the saved-model archive for possible checking.
+**What is Kendall’s tau, and why use it?** It measures how closely our predicted ordering
+matches the actual fastest-to-slowest ordering. For each pair of configurations, it asks:
+if A is actually faster than B, did our model also place A before B? Correctly ordered
+pairs increase the score; reversed pairs decrease it. Tau-b accounts for tied values.
 
-For the ten-page report, prioritize figures 01, 03, 06, 07 and 09; combine or omit the
-remaining figures according to space. Tables/figures need explanatory text. Use the
-caption file for metric definitions and evidence limits. Complete the team contribution
-statement and exact leaderboard screenshot/rank outside this automated evidence pack.
+For an actual order **A → B → C**, with no ties:
 
-**Attribution:** HGB, GNN message passing, ranking losses and percentile transforms are
-established methods; we do not claim to have invented them. Our project contribution is
-the implemented representation/combination and the empirical investigation. Acknowledge
-any participant code consulted as a reference in the final report; the course prohibits
-directly using participant solutions. The repository's research notes retain the reading
-trail. Do not claim unproven standalone mask/context gains or novelty of standard methods.
+| Predicted order | Interpretation | Kendall’s tau |
+|---|---|---|
+| A → B → C | All three pairs are correct | 1 |
+| A → C → B | Two pairs correct, one reversed | approximately 0.33 |
+| C → B → A | All three pairs reversed | −1 |
 
-**Stopping decision:** freeze the 0.567 submission and focus on a convincing, reproducible
-presentation of the evidence rather than another speculative sweep toward 0.590.
+Higher is better; values near zero indicate little net agreement in pair ordering.
+**Tau = 0.5 does not mean 50% accuracy.** This metric evaluates ordering rather than
+how close predicted runtimes are in seconds.
+
+Kendall’s tau is an established statistical metric used in the original
+[TPUGraphs research](https://papers.nips.cc/paper/2023/file/ded1a89e2b3b925444ada973af66336e-Paper-Datasets_and_Benchmarks.pdf),
+the dataset behind this competition. We adopt it because the task requires ranking
+compiler configurations; it is not our proposed modelling contribution. Our implementation
+uses [SciPy’s Kendall tau-b](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kendalltau.html).
+The local mean tau reported here remains distinct from the historical aggregate Kaggle score of **0.567**.
+
+We reserve graph-disjoint development data within each of two folds. A graph can train the
+other fold's model, but that model never scores its development fold. Official validation
+is an already-inspected audit, not a new untouched test. XLA audit sets have only seven graphs.
+
+**Constraint:** configuration tensors can be enormous even when model parameters are small.
+We stream sampled NPZ rows and bound graph size, feature matrices, scratch disk and worker RAM.
+The inventory below describes the supplied data; it does not mean every model trains on all of it.
 ''')
-code('''# Small report deliverable: figures, tables, captions, verification and exact CSV.
-# Full model archive is deliberately separate and must be retained separately.
-REPORT_ZIP = OUTPUT_DIR / "sc4000_final_report_artifacts.zip"
-with zipfile.ZipFile(REPORT_ZIP, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-    for folder in [OUTPUT_DIR / "figures", OUTPUT_DIR / "tables"]:
-        for path in sorted(folder.glob("*")):
-            if path.is_file(): archive.write(path, str(path.relative_to(OUTPUT_DIR)))
-    for name in ["FIGURE_CAPTIONS.md", "submission_final.csv", "submission_verification.json"]:
-        archive.write(OUTPUT_DIR / name, name)
-    archive.write(EVIDENCE_DIR / "freeze_manifest.json", "freeze_manifest.json")
-print("Report artifacts:", REPORT_ZIP)
-print("Kaggle file:", SUBMISSION)
-if DOWNLOAD_OUTPUTS:
-    try:
-        from google.colab import files
-        files.download(str(REPORT_ZIP))
-        print("Download requested. Verify completion on your computer.")
-    except ImportError:
-        print("Outside Colab: copy the files from the paths above.")
+code('''display(table("dataset_inventory"))
+display(table("split_inventory"))
+# Illustrative ranking example, not a measured experiment.
+example = pd.DataFrame({"configuration": [0,1,2,3], "runtime": [12.,8.,15.,10.],
+                        "predicted_cost": [.7,.1,.9,.4]})
+display(example)
+print("Predicted order:", example.sort_values("predicted_cost").configuration.tolist())
+''')
+md('''## 2. Preprocessing and a clear baseline
+
+**Question:** can an inexpensive model give us a useful reference before using graph learning?
+
+The baseline is **basic-summary histogram gradient boosting**, `B0_basic_hgb`. It is separate
+from the *reference GraphSAGE* used later for component ablations. We reproduce both baseline
+and selected-model recipes from their exact recorded training graph/configuration IDs.
+
+**Preprocessing:** fixed label-independent candidate pools; graph-level splits; bounded row
+extraction; numeric graph summaries; and within-graph targets. Original HGB fits graph-centred
+`log(1 + runtime)`, with per-graph weighting. Layout representations distinguish padding from
+valid axis categories. Richer models add masked statistics, categorical position histograms,
+opcode/depth associations, edge co-occurrences and compact topology/WL summaries. Tile uses
+its numeric configuration features and signed-log/interactions. Training labels and feature
+transforms never use development/audit runtimes to fit a model.
+
+**Why these features?** A graph summary alone is identical for every configuration of that
+graph. Configuration-aware features provide information that can distinguish its candidates.
+The feature bundle is tested as a bundle; we do not claim every constituent independently helps.
+''')
+code('''show("01_method")
+baselines = [s for s in CONTRACT["jobs"] if "baseline" in s["roles"] and s["fold"]==0 and s["seed"]==42]
+display(pd.DataFrame([{"collection":s["collection"], "model":s["experiment"]["name"],
+    "features":", ".join(s["experiment"]["blocks"]), "target":s["experiment"]["target"],
+    "trees":s["experiment"].get("iterations",s["cfg"]["hgb_iterations"])} for s in baselines]))
+''')
+md('''## 3. Exploring model families: do we need graph learning?
+
+We explored three main directions:
+
+| Direction | Motivation | Evidence and decision |
+|---|---|---|
+| MLP on compact features | A neural predictor without graph message passing | Earlier exploratory results are retained below; their protocol differs from later studies. |
+| Gradient boosting | Nonlinear feature interactions with manageable CPU cost | Remains a strong component across collections and the sole final Tile predictor. |
+| GraphSAGE | Learn how neighbouring operations interact with configuration choices | Retained in both XLA layout blends; performance varies across collections/folds. |
+| Gated GraphSAGE | Learn how much each neighbour contributes | Code exists on an earlier branch, but no verified run result was recovered. It is not presented as a measured success or failure. |
+
+The selected GraphSAGE uses opcode embeddings, numeric/configuration inputs, two width-32
+mean-neighbour message-passing layers with residual updates, graph/configurable-node pooling
+and a pairwise ranking loss. It is an established architecture, not a new invention.
+
+The chart below uses the **same later development folds** to compare GraphSAGE and a matched-data
+HGB control. The basic HGB is a separate baseline with its own budget. We show both folds so
+instability is visible. We do not combine the earlier MLP scores into this controlled chart.
+''')
+code('''show("02_model_families")
+display(table("model_family_comparison"))
+with zipfile.ZipFile(io.BytesIO(SPEC_BYTES)) as z:
+    early = pd.read_csv(z.open("early_model_exploration.csv"))
+display(Markdown("**Earlier exploration only — different protocol; do not compare numerically with the chart above.**"))
+display(early.pivot(index="experiment", columns="collection", values="ranking_score").round(4))
+''')
+md('''**Decision:** keep both compact tabular models and graph learning under investigation.
+Neither model family is assumed to win on every collection. The next experiments target
+specific possible limitations rather than replacing the whole system blindly.
+
+## 4. Controlled improvements: what worked and what did not?
+### 4.1 Representation and message passing
+
+**Question:** do explicit validity masks and context summaries improve the reference GNN?
+We compare additions with their named reference and separately examine removal controls.
+
+**Observation:** the displayed confirmed intervals cross zero. These results do not establish
+clear standalone gains for masks/context. A selected model can contain them without proving
+that each component is independently beneficial. Removal tests ask a different question from
+introducing a novel component. The source table names each control so these effects are not
+mistakenly added together.
+
+**Decision:** report the uncertainty; retain the development-selected recipe, without inventing
+a cumulative improvement story.
+''')
+code('''show("03_components")
+display(table("component_changes")[["collection","factor","reference","experiment",
+    "baseline_score","candidate_score","absolute_gain","relative_gain_pct","bootstrap_low","bootstrap_high"]])
+''')
+md('''### 4.2 Graph coverage and training-data budgets
+
+**Motivation:** severe graph sampling may discard useful structure, and limited training data
+may restrict generalization. These are hypotheses, not established explanations of weak scores.
+
+**Experiment:** increase sampled graph budgets; separately vary training graph counts and
+configurations per graph. Follow-up work expands tabular training and tests longer GNN training.
+
+**Observation:** larger sampled graphs and more data do not consistently help. Tabular expansion
+was accepted for NLP random; existing NLP default/Tile models remained preferable under the
+selection rule. Longer GNN training was not accepted. Large resource-excluded Tile settings
+were not accuracy failures—they were not successfully evaluated.
+
+**Decision:** use the selected bounded recipes. More retained structure is not automatically
+better, and more examples also change optimizer work. These are not compute-matched experiments.
+''')
+code('''show("04_coverage_and_data")
+display(table("training_data_screening").round(4))
+''')
+md('''### 4.3 Target transformation and ranking objectives
+
+**Motivation:** configurations need to be ordered within each graph. Runtime scale varies across
+graphs, so we test whether changing the target helps the learner focus on relative performance.
+
+**Controlled tests:** HGB graph-centred log-runtime versus within-graph percentile target;
+XGBoost regression versus grouped pairwise ranking with fixed XGBoost capacity. HGB versus XGBoost
+also changes learner/capacity and is not an isolated objective ablation. Faster configurations
+have higher relevance for XGBoost ranking; its output is negated for our lower-is-faster pipeline.
+
+**Observation:** percentile-target HGB contributes to accepted blends on three collections.
+Neither screened XGBoost alternative enters the final system. NLP random illustrates why model
+complementarity matters: the percentile model alone is slightly worse on mean development score,
+yet blending it with the incumbent improves the combined ranking.
+
+**Decision:** add percentile-target predictions where the blend improves both development folds.
+Do not conclude that all pairwise rankers are inferior from one fixed screening setup.
+''')
+code('''show("05_target_and_objective")
+display(table("target_screening")[["collection","experiment","fold","seed","dev_score"]])
+''')
+md('''## 5. Selecting complementary models and quantifying improvement
+
+A small predefined blend grid was screened on development predictions and promising candidates
+confirmed with three seeds. Accepted final updates required mean development gain of at least
+0.002 and no regression in either fold. Repeated seeds are not independent graph replications;
+some deterministic tree predictions coincide.
+
+Each member's predictions become normalized within-graph ranks before averaging across seeds/folds
+and applying the fixed collection weights below. Development scoring uses only the appropriate
+fold; the final test ensemble uses both folds. The final recipes are locked: this reproduction
+notebook does not retune them on the reused audit or the leaderboard.
+
+**Percentages:** tables show before/after scores and absolute differences. Relative change is
+`100 × (after − before) / before`, suppressed for baseline tau below 0.1 where it is misleading.
+These are relative score changes, not accuracy percentage points. Ablation gains are not additive.
+
+The target-enhanced NLP-default blend moves reused audit tau from 0.4113 to 0.4536: +0.0423,
+about +10.29% relative. This is a blend improvement, not an isolated causal estimate for the target.
+The reported public improvement 0.558 → 0.567 is +0.009 (+1.61% relative), with three collections
+changing together. It cannot be attributed to one collection from the aggregate score alone.
+''')
+code('''display(table("selected_recipe"))
+display(table("blend_changes")[["collection","dev_gain","baseline_score","candidate_score",
+    "absolute_gain","relative_gain_pct","graphs","bootstrap_low","bootstrap_high"]])
+display(table("actual_training_sizes").groupby(["collection","experiment","fold"],as_index=False).agg(
+    graphs=("graphs","first"),configurations=("configurations","first")))
+''')
+md('''## 6. Reproduce: load compatible models or train missing models
+
+The executable workflow below validates raw data against fixed split manifests, verifies model
+identity and model-file hashes, and trains missing baseline/selected fits. A model-file name alone
+is not sufficient for reuse. An optional historical archive is checked against known hashes before
+its model objects are loaded. Current-run evaluations always come from model inference.
+
+Feature extraction runs in isolated workers with bounded scratch storage. Only one preparation
+group is retained at a time; it is removed after use. Worker RAM and system reserves are monitored.
+A resource failure stops the run rather than silently dropping a required final model. A clean
+runtime may need several sessions; completed fits are resumable, while an interrupted fit restarts.
+
+`RUN_ABLATIONS=True` additionally runs the recorded successful comparison recipes for the requested
+seeds. Seed 42 reruns screening-style comparisons; all three seeds include the recorded confirmations.
+It does not recreate resource-excluded jobs or claim to rerun the early MLP/gated branch experiments.
+The optional suite never changes the final blend. Its fit-level and per-graph results are saved for
+inspection; only matched settings/seeds should be used for causal comparison.
+
+Checkpoints are written every configured interval, at boundaries and on handled interruption.
+A browser download request is not confirmed delivery. Keep a completed backup before disconnecting.
+''')
+code('''if RUN_MODE == "reproduce":
+    import reproduce
+    selected_jobs = reproduce.plan(CONTRACT, RUN_ABLATIONS, ABLATION_SEEDS)
+    print("Selected + baseline fits:", 90)
+    print("Total requested fits:", len(selected_jobs), "(existing verified models will be reused)")
+    print("Ablations:", RUN_ABLATIONS, "| seeds:", ABLATION_SEEDS)
+    display(pd.DataFrame([{"collection":s["collection"], "role":", ".join(s["roles"]),
+        "model":s["experiment"]["name"]} for s in selected_jobs]).groupby(["collection","role"]).size().rename("fits").reset_index())
+else:
+    print("REVIEW: no training plan is executed.")
+''')
+# Reuse the proven data-locator/download helper, without requiring previous study outputs.
+old=json.loads((REPO/'notebooks/experiments/SC4000_V3_Coverage_and_Data.ipynb').read_text())
+locator=next(''.join(c['source']) for c in old['cells'] if c['cell_type']=='code' and ''.join(c['source']).startswith('def locate_data():'))
+locator=locator[:locator.index('CONFIG["sample_submission"]')]
+code('''if RUN_MODE == "reproduce":
+'''+''.join('    '+line+'\n' for line in locator.splitlines())+'''    from study_submission import locate_template
+    SAMPLE_SUBMISSION = str(locate_template(NPZ_ROOT, SAMPLE_SUBMISSION))
+    if RESTORE_RUN_ZIP:
+        from v4_core import restore
+        restore(RESTORE_RUN_ZIP, OUTPUT_DIR, 12)
+        print("Restored completed work. Clear RESTORE_RUN_ZIP before rerunning this cell in the same runtime.")
+    print("Data:", NPZ_ROOT)
+    print("Template:", SAMPLE_SUBMISSION)
+''')
+code('''RUN_STATE = {"status":"review_only"}
+def download_checkpoint(path):
+    print("Backup:", path, "| bytes:", Path(path).stat().st_size)
+    if AUTO_DOWNLOAD_CHECKPOINTS:
+        try:
+            from google.colab import files
+            files.download(str(path))
+        except ImportError: print("Outside Colab: copy this backup from its path.")
+        except Exception as exc: print("Download request failed:", exc, "— use the Files sidebar.")
+    print("Verify the completed ZIP on your computer; local Colab files are temporary.")
+
+if RUN_MODE == "reproduce":
+    resources = dict(session_hours=SESSION_HOURS, checkpoint_minutes=CHECKPOINT_MINUTES,
+        worker_ram_gib=WORKER_RAM_GIB, system_reserve_gib=SYSTEM_RESERVE_GIB, cpu_threads=CPU_THREADS)
+    RUN_STATE = reproduce.run(NPZ_ROOT, OUTPUT_DIR, SCRATCH_DIR, RUNTIME_DIR, CONTRACT,
+        resources=resources, model_archive=MODEL_ARCHIVE, run_ablations=RUN_ABLATIONS,
+        ablation_seeds=ABLATION_SEEDS, sample_submission=SAMPLE_SUBMISSION,
+        on_checkpoint=download_checkpoint)
+    print(RUN_STATE)
+else:
+    print("REVIEW ONLY: historical figures are available; no fresh submission is generated.")
+''')
+md('''## 7. Results: historical evidence and this execution
+
+### Historical baseline-to-final comparison
+
+The following figure compares the basic HGB pipeline with the final selected system on the
+previously inspected audit graphs. It is a whole-system comparison. Layout and Tile use different
+metrics; the panels must not be averaged into an estimated Kaggle score. The final model is not
+reselected according to which result looks best on this audit.
+
+Our conclusion is conditional: the chosen combination improves the recorded overall baseline
+comparison, but not every proposed change helps. Small audit sets, repeated inspection, sampled
+candidate evaluation and multiple tested alternatives limit the strength of generalization claims.
+''')
+code('''show("06_final_results")
+display(table("historical_final_audit"))
+display(table("reported_public_scores"))
+''')
+md('''### Current execution
+
+This section only reports newly evaluated predictions from the models in this run. It does not
+substitute the historical score when training is incomplete. Different hardware/library builds
+can affect retraining; a new submission's Kaggle score remains unknown until evaluated there.
+If every historical model is reused under its recorded environment, the output hash can be
+compared with the frozen CSV, but the notebook never forces new predictions to match that CSV.
+''')
+code('''if RUN_MODE == "reproduce":
+    if (OUTPUT_DIR / "evaluation/current_audit.csv").exists():
+        display(pd.read_csv(OUTPUT_DIR / "evaluation/current_audit.csv"))
+        current_plot = story.current_results(OUTPUT_DIR)
+        if current_plot: display(Image(filename=str(current_plot)))
+    if RUN_STATE.get("status") == "complete":
+        display(json.loads((OUTPUT_DIR / "submission_provenance.json").read_text()))
+        print("Fresh Kaggle submission:", OUTPUT_DIR / "submission_final.csv")
+        print("Fresh baseline submission:", OUTPUT_DIR / "submission_baseline.csv")
+    else:
+        print("Run incomplete:", RUN_STATE, "— resume before using a submission.")
+else:
+    print("No current-run metrics: this execution rendered historical evidence only.")
+''')
+md('''## 8. What we learned, limitations and supporting diagnostics
+
+| Finding | Decision |
+|---|---|
+| Compact boosted trees provide a strong practical reference | Retain them throughout comparisons and in the final system. |
+| GraphSAGE contributes complementary predictions on XLA | Use development-selected blends rather than replacing every collection with a GNN. |
+| Mask/context standalone gains are inconclusive | Report uncertainty; do not claim each addition independently improves accuracy. |
+| Larger graph/data/training budgets are not uniformly better | Keep selected resource-bounded recipes and disclose untested resource exclusions. |
+| Percentile-target predictions improve selected blends | Preserve the accepted target-based components; screened XGBoost alternatives are not selected. |
+
+The curves below are **historical selected-GNN diagnostics**, not new training output. Training
+loss and early-development tau have different units. There is no recorded validation-loss series,
+and these plots cannot prove absence of overfitting. Current GNN histories, when trained here,
+are saved beside their model under `models/.../history.csv`.
+
+For the written report, follow these questions and decisions rather than version numbers.
+The six main figures are organized in that order; use only those needed within the page limit.
+Underlying tables retain original experiment IDs for traceability. Standard HGB, GraphSAGE and
+ranking methods are not claimed as inventions. Research notes in the repository acknowledge
+prior work; the gated branch is described as implemented but unverified, not invented evidence.
+''')
+code('''show("S1_learning_curves")
+print("Historical figures/tables/captions:", STORY_DIR)
+print("Current models, evaluation, provenance and submissions:", OUTPUT_DIR)
+print("Keep the completed final-run backup for resuming; the small evidence pack has no model weights.")
 ''')
 notebook=dict(cells=cells,metadata=dict(kernelspec=dict(display_name='Python 3',language='python',name='python3'),
-    language_info=dict(name='python',version='3.11'),colab=dict(name='SC4000_Final.ipynb')),
+    language_info=dict(name='python',version='3.11'),colab=dict(name='SC4000_Final.ipynb'),
+    reproducibility=dict(default='raw-data load-or-train',historical_score=.567,model_archive_required=False)),
     nbformat=4,nbformat_minor=5)
-target=HERE.parents[1]/'notebooks'/'SC4000_Final.ipynb';target.write_text(json.dumps(notebook,indent=1)+'\n')
-print(target,len(cells),'cells')
+target=REPO/'notebooks/SC4000_Final.ipynb';target.write_text(json.dumps(notebook,indent=1)+'\n')
+print(target,len(cells),'cells',target.stat().st_size,'bytes')
