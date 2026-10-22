@@ -2,7 +2,7 @@
 
 | Directory | Role |
 |---|---|
-| [final_study](final_study/README.md) | Frozen evidence packaging, report replay and final notebook builder |
+| [final_study](final_study/README.md) | Load-or-train reproduction, historical narrative, evidence packaging and final notebook builder |
 | [ablation_v2](ablation_v2/README.md) | Comprehensive baseline and component ablations |
 | [ablation_v3](ablation_v3/README.md) | Graph coverage and training-data study |
 | [ablation_v4](ablation_v4/README.md) | Focused scaling and report generation |

@@ -1,5 +1,10 @@
 # Final freeze and notebook decision
 
+**Notebook execution plan superseded:** the selected model recipe remains frozen,
+but the final notebook now supports raw-data load-or-train reproduction. See
+[the revised design](reproducible_final_notebook.md). The text below records the
+earlier evidence-replay decision.
+
 Decision on 2026-10-21: stop further experiments at the user-reported public score
 0.567. Preserve the selected submission rather than start another sweep toward
 0.590. The evidence for this choice is in `v5_completed_findings.md`.

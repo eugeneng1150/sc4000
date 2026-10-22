@@ -5,10 +5,12 @@
 /results/
 /output/
 /tmp/
+/.chart-data-*/
 /sc4000_*results*.zip
 
 # Outputs from running the self-contained notebooks in any working directory.
 **/sc4000_final_frozen/
+**/sc4000_final_reproduction*/
 **/sc4000_gnn_v*/
 **/sc4000_gnn_ablation*/
 **/.sc4000_*/

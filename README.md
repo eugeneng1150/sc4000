@@ -1,64 +1,57 @@
 # SC4000 — Predict AI Model Runtime
 
-The frozen final system scored **0.567** on Kaggle (user-reported). It combines
-collection-specific boosted trees and GNN rankers. Experiments are complete;
-the final notebook presents the evidence and reproduces the submitted predictions.
+A collection-specific boosted-tree/GraphSAGE ensemble has a screenshot-documented
+public Kaggle score of **0.56715** and private score of **0.49624** from a
+post-deadline submission; no official leaderboard position is claimed.
+The final notebook explains the investigation and can
+**retrain the selected system from raw competition data without a model ZIP**.
 
 ## Start here
 
-- **[Final notebook](notebooks/SC4000_Final.ipynb)** — methodology, preprocessing,
-  ablations, selected models, limitations and saved figure outputs. Run all cells
-  to regenerate the report assets and exact submission; no training sweep is needed.
-- **[Final submission CSV](artifacts/final/submission_final.csv)** — the frozen
-  894-row file for Kaggle. This is the selected submission, renamed for handoff.
-- **[Report figures and tables](reports/final/README.md)** — ten PNG/PDF figure pairs,
-  supporting CSVs and captions, ready to use in the report.
-- **[Run and verification guide](src/final_study/README.md)** — dependencies,
-  optional model-archive verification and replay limitations.
-- **[Freeze decision](docs/evidence/final_freeze_decision.md)** and
-  **[completed findings](docs/evidence/v5_completed_findings.md)** — why this system
-  was selected and what the results establish.
+- **[Report draft](reports/final/report_draft.pdf)** — the 10-page report, including
+  references. [LaTeX source](reports/final/report_draft.tex) and the
+  [Overleaf bundle](reports/final/report_draft_source.zip) are included.
+- **[Final notebook](notebooks/SC4000_Final.ipynb)** — baseline, model exploration,
+  controlled ablations, selection, load-or-train execution and fresh submission export.
+- **[Execution and recovery guide](src/final_study/README.md)** — data setup,
+  optional model reuse, dependency pinning, resources and checkpoints.
+- **[Report figures and tables](reports/final/README.md)** — six main historical
+  figures plus supporting diagnostics, organized around experimental questions.
+- **[Previously submitted CSV](artifacts/final/submission_final.csv)** — the frozen
+  894-row submission associated with the reported 0.567; new predictions are saved
+  separately by the notebook.
+- **[Findings](docs/evidence/v5_completed_findings.md)** and
+  **[reproduction design](docs/evidence/reproducible_final_notebook.md)** — evidence,
+  decisions and the difference between historical results and a new execution.
 
-The final notebook replays saved predictions; it does **not** train models or run
-fresh inference by default. It needs NumPy, pandas and Matplotlib, with no raw
-competition data. Its embedded evidence pack contains no model weights. Preserve
-the complete checkpoint separately for model verification or future inference.
-Local audit metrics and the reported Kaggle score are different evidence sources.
+Default `Run all` loads verified models or trains missing ones: 60 selected fits
+plus 30 basic-baseline fits, then evaluation and test prediction. Raw competition
+data is required. The notebook includes code, recipes, splits, configuration IDs
+and seeds. A full historical model archive is optional and accelerates fitting.
+Fresh CPU reproduction can require multiple sessions.
+
+`RUN_ABLATIONS=False` avoids rerunning the historical search by default. Explicitly
+enable the recorded comparison suite when needed. `RUN_MODE="review"` renders the
+historical figures only and produces no new submission. Checked-in saved outputs
+are labelled historical review outputs; source defaults use reproduction.
 
 ## Repository map
 
 | Location | Contents |
 |---|---|
-| [`notebooks/`](notebooks/README.md) | Final deliverable and historical experiment notebooks |
-| [`src/`](src/README.md) | Notebook builders, study implementations and checks |
-| [`artifacts/final/`](artifacts/final/README.md) | Frozen CSV, compact evidence archive and hash manifest |
-| [`reports/final/`](reports/final/README.md) | Curated final figures, tables and captions |
-| [`docs/`](docs/README.md) | Decisions, research, methodology drafts and reference papers |
-| [`archive/legacy/`](archive/legacy/README.md) | Earlier approaches retained for provenance |
-| `local/` | Downloaded checkpoints, output copies, snapshots and scratch files; ignored by Git |
+| [`notebooks/`](notebooks/README.md) | Final notebook and historical experiments |
+| [`src/`](src/README.md) | Builders, implementations and tests |
+| [`artifacts/final/`](artifacts/final/README.md) | Frozen submission/evidence and portable reproduction specification |
+| [`reports/final/`](reports/final/README.md) | Current narrative's historical figures, tables and captions |
+| [`docs/`](docs/README.md) | Findings, research, methodology drafts and references |
+| [`archive/legacy/`](archive/legacy/README.md) | Earlier approaches and report drafts |
+| `local/` | Downloaded checkpoints, local outputs and scratch; ignored by Git |
 | `data/` | Raw competition data; ignored by Git |
 
-On this workstation the complete final checkpoint is
-`local/results/sc4000_gnn_v5_results (11)/`. Keep an independent backup: Git does
-not store it. Paths and model identifiers **inside** checkpoint archives retain
-their original names so resume and provenance checks remain valid.
+On the original workstation the complete historical model archive is
+`local/results/sc4000_gnn_v5_results (11)/`. Keep independent backups; Git does not
+store trained weights. The compact evidence and reproduction packs contain no weights.
 
-## Rebuild or check
-
-From the repository root, in a Python environment with the scientific dependencies:
-
-```sh
-python src/final_study/test_final.py
-python src/final_study/build_notebook.py
-```
-
-The builder regenerates the final notebook and clears its saved outputs. Running
-the checked-in notebook is sufficient for report replay; rebuilding is optional.
-Study-specific dependencies and checks are documented beside each experiment in
-`src/`. The experimental notebooks embed their runtime code for Colab portability.
-
-For the course handoff, write one coherent methodology and results narrative.
-Use the figure captions to distinguish supported gains, inconclusive ablations
-and resource exclusions. Retain the exact Kaggle score/rank screenshot and team
-contributions alongside the report. See the [organization record](docs/repository_organization.md)
-for the old-to-new path map.
+Local audit scores and public Kaggle scores are different evidence. Historical
+results are retained; freshly trained models receive their own evaluation and
+provenance. No new leaderboard result is assumed from a rerun.
